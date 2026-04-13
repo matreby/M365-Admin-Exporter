@@ -1,6 +1,6 @@
 # M365-Admin-Exporter
 ## Description
-This powershell script is deigned to export all admin roles assignments from Entra
+This powershell script is designed to export all admin roles assignments from Entra
 
 ## Prerequisites
 - Microsoft.Graph.Authentication Module
