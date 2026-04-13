@@ -77,7 +77,7 @@ function Get-AssignmentInfo {
         PIMValidation               = $PIMValidation
         PIMApproval                 = $PIMApproval
         PIMAuthContext              = $PIMAuthContext
-        
+        id                          = $assignment.principal.Id
     }
 
     return $AssignmentInfo
@@ -140,7 +140,7 @@ write-host "--- ✅ done ---" -ForegroundColor Green
 
 Write-host "Exporting all assignments to $WorkingFolder\AdminRolesSummary.csv..." -ForegroundColor DarkGray
 $AllRoleAssignments = ($AssignedRoles + $EligibleRoles) | Sort-Object Tier,Role
-$AllRoleAssignments | export-csv $WorkingFolder\AdminRolesSummary.csv -NoTypeInformation -Delimiter ";" -Force -Encoding utf8
+$AllRoleAssignments | select -ExcludeProperty id | export-csv $WorkingFolder\AdminRolesSummary.csv -NoTypeInformation -Delimiter ";" -Force -Encoding utf8
 write-host "--- ✅ done ---" -ForegroundColor Green
 
 Write-host "Expanding role assignable groups... " -ForegroundColor DarkGray -NoNewline
@@ -151,6 +151,7 @@ foreach ($group in $AssignableGroups){
         Role                = ($allroles | where DisplayName -eq $group.displayName).Role -join "|"
         RoleAssignmentType  = ($allroles | where DisplayName -eq $group.displayName).MembershipType -join "|"
         MembersUPN          = $group.members.userPrincipalName -join "|"
+        MembersID           = $group.members.Id
         #PIMforGrpEnabled    = $PIMEnabled
     }
 
@@ -160,16 +161,16 @@ write-host "$($Admingroups.count) groups found"
 write-host "--- ✅ done ---" -ForegroundColor Green
 
 Write-host "Exporting all role assignable groups to $WorkingFolder\AdminEligibleGroups.csv..." -ForegroundColor DarkGray
-$AdminGroups | export-csv $WorkingFolder\AdminEligibleGroups.csv -NoTypeInformation -Delimiter ";" -Force -Encoding utf8
+$AdminGroups | select -ExcludeProperty MembersId | export-csv $WorkingFolder\AdminEligibleGroups.csv -NoTypeInformation -Delimiter ";" -Force -Encoding utf8
 write-host "--- ✅ done ---" -ForegroundColor Green
 
 Write-host "Resolving group members and role assignments to create the complete report..." -ForegroundColor DarkGray
 $AdminRolesDetail = @()
 foreach ($role in $allroles){
     if ($role.principalType -eq "group") {
-        $members = (($AdminGroups | where DisplayName -eq $role.DisplayName).MembersUPN).split("|")
+        $members = ($AdminGroups | where DisplayName -eq $role.DisplayName).MembersID
         foreach ($member in $members) {
-            $mgmember = $AssignableGroups.members | where userPrincipalName -eq $member | select -Unique
+            $mgmember = $AssignableGroups.members | where Id -eq $member | select -Unique
             $UserMFAMethods = ""
             $UserMFAphishresistant = ""
             if ($mgmember.'@odata.type' -like "*user*") {
