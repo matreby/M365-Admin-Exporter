@@ -12,3 +12,4 @@ This powershell script is designed to export all admin roles assignments from En
 - AdminRoleSummary.csv : Direct members of each Entra role
 - AdminRolesDetails.csv : All principals directly or not assigned to Entra role
 - AdminEligibleGroups.csv : All Entra groups eligible to role assignment
+![image](output.png)
