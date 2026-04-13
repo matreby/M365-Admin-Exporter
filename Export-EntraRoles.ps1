@@ -1,4 +1,4 @@
-
+#Requires -Modules Microsoft.Graph.Authentication
 function Invoke-MgGraphRequestPaging {
     param (
         [string]$Uri,
@@ -29,7 +29,12 @@ function Invoke-MgGraphRequestPaging {
 
 Import-Module Microsoft.Graph.Authentication
 if ($null -eq (Get-MgContext)) {
-    Connect-MgGraph -Scopes "Directory.Read.All","RoleManagement.Read.All","RoleManagementPolicy.Read.AzureADGroup","UserAuthenticationMethod.Read.All"
+    Write-host "Connecting to MgGraph..."
+    Connect-MgGraph -Scopes "Directory.Read.All","RoleManagement.Read.All","UserAuthenticationMethod.Read.All" #"RoleManagementPolicy.Read.AzureADGroup"
+} 
+else {
+    Write-host "Already connected to MgGraph using $((Get-MgContext).AppName)"
+    Write-host "Ensure following scopes are available : Directory.Read.All,RoleManagement.Read.All,UserAuthenticationMethod.Read.All"
 }
 $WorkingFolder = $PSScriptRoot
 if ($WorkingFolder -eq "") {$WorkingFolder = $pwd}
@@ -42,14 +47,23 @@ $AssignableGroupsURI    = "https://graph.microsoft.com/beta/groups?`$filter=isas
 $PIMRolePoliciesURI     = "https://graph.microsoft.com/beta/policies/roleManagementPolicyAssignments?`$filter=scopeId eq '/' and scopeType eq 'DirectoryRole'&`$expand=policy(`$expand=rules)"
 
 # Graph requests
+Write-host "Starting Graph Exports"
+Write-host "- Exporting role defitinitions..." -ForegroundColor DarkGray
 $RoleDefinitions    = Invoke-MgGraphRequestPaging -Uri $RoleDefinitionsURI
+Write-host "- Exporting permanent role assignments..." -ForegroundColor DarkGray
 $RoleAssignments    = Invoke-MgGraphRequestPaging -Uri $RoleAssignmentsURI
+Write-host "- Exporting eligible role assignments..." -ForegroundColor DarkGray
 $RoleEligibility    = Invoke-MgGraphRequestPaging -Uri $RoleEligibilityURI
+Write-host "- Exporting role assignable groups..." -ForegroundColor DarkGray
 $AssignableGroups   = Invoke-MgGraphRequestPaging -uri $AssignableGroupsURI
+Write-host "- Exporting PIM configuration for all roles..." -ForegroundColor DarkGray
 $PIMRolePolicies    = Invoke-MgGraphRequestPaging -Uri $PIMRolePoliciesURI
+Write-host "--- ✅ Graph exports done ---" -ForegroundColor Green
 
+Write-host "- Importing roles tier definition (aztier.com)..." -ForegroundColor DarkGray
 $tierRoles = Get-Content "$WorkingFolder\tiered-entra-roles.json" | ConvertFrom-Json #https://github.com/emiliensocchi/azure-tiering/blob/main/Entra%20roles/tiered-entra-roles.json
 if ($null -eq $tierRoles){Write-warning "Failed to get Entra roles tier definition"}
+else {write-host "--- ✅ done ---" -ForegroundColor Green}
 
 $AssignedRoles = @()
 foreach ($role in $RoleAssignments) {
@@ -216,13 +230,14 @@ $Tier0GAAdmins      = ($AdminRolesDetail | where Role -eq "Global Administrator"
 $Tier0NoPIM         = ($Tier0Admins | where MembershipType -ne "ELIGIBLE").count
 $Tier0NoPRMFA       = ($Tier0Admins | where MFAphishresistantAvailable -ne "YES").count
 if ($Tier0AdminsCount -ge 20) {$WarningT0 = "⚠️"} else {$WarningT0 = ""}
-if ($Tier0NoPIM -ge 1 -or $Tier0NoPRMFA -ge 1){$Warning = "⚠️"} else {$warning = ""}
+if ($Tier0NoPIM -ge 1){$WarningPIM = "⚠️"} else {$warningPIM = ""}
+if ($Tier0NoPRMFA -ge 1){$WarningMFA = "⚠️"} else {$warningMFA = ""}
 if ($Tier0GAAdmins -ge 5){$WarningGA = "⚠️"} else {$warningGA = ""}
 Write-host "Tier 0 : " -ForegroundColor DarkRed -NoNewline
 Write-host "$Tier0AdminsCount admins $warningT0"
 Write-host "`t- $Tier0GAAdmins Global Admins $warningGA"
-Write-host "`t- $Tier0NoPIM without PIM (permanent admin) $warning" 
-Write-host "`t- $Tier0NoPRMFA without MFA phish resistant available $warning" 
+Write-host "`t- $Tier0NoPIM without PIM (permanent admin) $warningPIM" 
+Write-host "`t- $Tier0NoPRMFA without MFA phish resistant available $warningMFA" 
 
 #Tier1
 $Tier1Admins        = $AdminRolesDetail | where Tier -eq "1"
@@ -242,8 +257,8 @@ $Tier2Admins       += $AdminRolesDetail | where Tier -eq ""
 $Tier2AdminsCount   = $Tier2Admins.count
 $Tier2NoPIM         = ($Tier2Admins | where MembershipType -ne "ELIGIBLE").count
 $Tier2NoPRMFA       = ($Tier2Admins | where MFAphishresistantAvailable -ne "YES").count
-if ($Tier2NoPIM -ge 10)   {$warningPIM = "⚠️"} else {$warningPIM = ""}
-if ($Tier2NoPRMFA -ge 10) {$warningMFA = "⚠️"} else {$warningMFA = ""}
+if ($Tier2NoPIM -ge 50)   {$warningPIM = "⚠️"} else {$warningPIM = ""}
+if ($Tier2NoPRMFA -ge 50) {$warningMFA = "⚠️"} else {$warningMFA = ""}
 Write-host "Tier 2 (or untiered) : " -ForegroundColor Magenta -NoNewline
 Write-host "$Tier2AdminsCount admins"
 Write-host "`t- $Tier2NoPIM without PIM (permanent admin) $warningPIM" 
