@@ -148,8 +148,8 @@ $AdminGroups = @()
 foreach ($group in $AssignableGroups){
     $current = [PSCustomObject]@{
         DisplayName         = $group.displayName
-        Role                = ($allroles | where DisplayName -eq $group.displayName).Role -join "|"
-        RoleAssignmentType  = ($allroles | where DisplayName -eq $group.displayName).MembershipType -join "|"
+        Role                = ($AllRoleAssignments | where DisplayName -eq $group.displayName).Role -join "|"
+        RoleAssignmentType  = ($AllRoleAssignments | where DisplayName -eq $group.displayName).MembershipType -join "|"
         MembersUPN          = $group.members.userPrincipalName -join "|"
         MembersID           = $group.members.Id
         #PIMforGrpEnabled    = $PIMEnabled
@@ -166,7 +166,7 @@ write-host "--- ✅ done ---" -ForegroundColor Green
 
 Write-host "Resolving group members and role assignments to create the complete report..." -ForegroundColor DarkGray
 $AdminRolesDetail = @()
-foreach ($role in $allroles){
+foreach ($role in $AllRoleAssignments){
     if ($role.principalType -eq "group") {
         $members = ($AdminGroups | where DisplayName -eq $role.DisplayName).MembersID
         foreach ($member in $members) {
@@ -209,13 +209,13 @@ foreach ($role in $allroles){
 write-host "--- ✅ done ---" -ForegroundColor Green
 
 Write-host "Exporting all role assignable groups to $WorkingFolder\AdminRolesDetails.csv..." -ForegroundColor DarkGray
-$AdminRolesDetail | select -ExcludeProperty NumberOfGroupMembers | sort-object Tier,Role | export-csv $WorkingFolder\AdminRolesDetails.csv -NoTypeInformation -Delimiter ";" -Force -Encoding utf8
+$AdminRolesDetail | select Role,Tier,MembershipType,AssignedThrough,PrincipalType,DisplayName,UserPrincipalName,Enabled,PIMDuration,PIMValidation,PIMApproval,PIMAuthContext,MFAphishresistantAvailable,MFAMethods -ExcludeProperty id,NumberOfGroupMembers | sort-object Tier,Role | export-csv $WorkingFolder\AdminRolesDetails.csv -NoTypeInformation -Delimiter ";" -Force -Encoding utf8
 write-host "--- ✅ done ---" -ForegroundColor Green
 
 #Analysis
 Write-host "Export completed : $WorkingFolder" -ForegroundColor Cyan
 Write-host "--------------------------------"
-$NumberOfRoles = ($allroles | where role -ne $null | select role -Unique).count
+$NumberOfRoles = ($AllRoleAssignments | where role -ne $null | select role -Unique).count
 $NumberOfAssignments = $AdminRolesDetail.count
 Write-Host "Found $NumberOfRoles admin roles with $NumberOfAssignments assignments"
 #Tier0
