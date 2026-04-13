@@ -252,7 +252,7 @@ Write-host "`t- $Tier1NoPRMFA without MFA phish resistant available $warningMFA"
 
 #Tier2 or untiered
 $Tier2Admins        = $AdminRolesDetail | where Tier -eq "2"
-$Tier2Admins       += $AdminRolesDetail | where Tier -eq ""
+$Tier2Admins       += $AdminRolesDetail | where Tier -eq $null
 $Tier2AdminsCount   = $Tier2Admins.count
 $Tier2NoPIM         = ($Tier2Admins | where MembershipType -ne "ELIGIBLE").count
 $Tier2NoPRMFA       = ($Tier2Admins | where MFAphishresistantAvailable -ne "YES").count
