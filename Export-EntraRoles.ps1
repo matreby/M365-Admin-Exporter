@@ -49,6 +49,7 @@ $AssignableGroups   = Invoke-MgGraphRequestPaging -uri $AssignableGroupsURI
 $PIMRolePolicies    = Invoke-MgGraphRequestPaging -Uri $PIMRolePoliciesURI
 
 $tierRoles = Get-Content "$WorkingFolder\tiered-entra-roles.json" | ConvertFrom-Json #https://github.com/emiliensocchi/azure-tiering/blob/main/Entra%20roles/tiered-entra-roles.json
+if ($null -eq $tierRoles){Write-warning "Failed to get Entra roles tier definition"}
 
 $AssignedRoles = @()
 foreach ($role in $RoleAssignments) {
@@ -117,7 +118,7 @@ foreach ($role in $RoleEligibility) {
         #Last IP
         NumberOfGroupMembers        = $NbGroupMembers
         PIMDuration          = (($PIMRolePolicies | where roleDefinitionId -eq $role.roleDefinitionId).policy.rules | where id -eq "Expiration_EndUser_Assignment").maximumDuration -replace "PT",""
-        PIMValidation        = (($PIMRolePolicies | where roleDefinitionId -eq $role.roleDefinitionId).policy.rules | where id -eq  "Enablement_EndUser_Assignment").enabledRules
+        PIMValidation        = ((($PIMRolePolicies | where roleDefinitionId -eq $role.roleDefinitionId).policy.rules | where id -eq  "Enablement_EndUser_Assignment").enabledRules | select -Unique) -join "|"
         PIMApproval          = (($PIMRolePolicies | where roleDefinitionId -eq $role.roleDefinitionId).policy.rules | where id -eq  "Approval_EndUser_Assignment").setting.isApprovalRequired
         PIMAuthContext       = (($PIMRolePolicies | where roleDefinitionId -eq $role.roleDefinitionId).policy.rules | where id -eq  "AuthenticationContext_EndUser_Assignment").claimvalue
     }
@@ -190,16 +191,17 @@ foreach ($role in $allroles){
         }
     } 
     else {
-        $role | add-member -NotePropertyName AssignedThrough -NotePropertyValue "Direct" -force
-        $AdminRolesDetail += $role
+        $current = $role     
+        $AdminRolesDetail += $current
+        $AdminRolesDetail | add-member -NotePropertyName AssignedThrough -NotePropertyValue "Direct" -force
     }
 
 }
 
-
-$allroles | export-csv $WorkingFolder\AdminRolesSummary.csv -NoTypeInformation -Delimiter ";" -Force
-$AdminGroups | export-csv $WorkingFolder\AdminEligibleGroups.csv -NoTypeInformation -Delimiter ";" -Force
-$AdminRolesDetail | select -ExcludeProperty NumberOfGroupMembers | export-csv $WorkingFolder\AdminRolesDetails.csv -NoTypeInformation -Delimiter ";" -Force
+#Export
+$allroles | export-csv $WorkingFolder\AdminRolesSummary.csv -NoTypeInformation -Delimiter ";" -Force -Encoding utf8
+$AdminGroups | export-csv $WorkingFolder\AdminEligibleGroups.csv -NoTypeInformation -Delimiter ";" -Force -Encoding utf8
+$AdminRolesDetail | select -ExcludeProperty NumberOfGroupMembers | export-csv $WorkingFolder\AdminRolesDetails.csv -NoTypeInformation -Delimiter ";" -Force -Encoding utf8
 
 #Analysis
 Write-host "Export completed : $WorkingFolder" -ForegroundColor Cyan
@@ -210,18 +212,17 @@ Write-Host "Found $NumberOfRoles admin roles with $NumberOfAssignments assignmen
 #Tier0
 $Tier0Admins        = $AdminRolesDetail | where Tier -eq "0"
 $Tier0AdminsCount   = $Tier0Admins.count
+$Tier0GAAdmins      = ($AdminRolesDetail | where Role -eq "Global Administrator").count
 $Tier0NoPIM         = ($Tier0Admins | where MembershipType -ne "ELIGIBLE").count
 $Tier0NoPRMFA       = ($Tier0Admins | where MFAphishresistantAvailable -ne "YES").count
 if ($Tier0AdminsCount -ge 20) {$WarningT0 = "⚠️"} else {$WarningT0 = ""}
-if ($Tier0NoPIM -ge 1 -or $Tier0NoPRMFA -ge 1){
-    $Warning = "⚠️"
-} else {
-    $warning = ""
-}
+if ($Tier0NoPIM -ge 1 -or $Tier0NoPRMFA -ge 1){$Warning = "⚠️"} else {$warning = ""}
+if ($Tier0GAAdmins -ge 5){$WarningGA = "⚠️"} else {$warningGA = ""}
 Write-host "Tier 0 : " -ForegroundColor DarkRed -NoNewline
 Write-host "$Tier0AdminsCount admins $warningT0"
+Write-host "`t- $Tier0GAAdmins Global Admins $warningGA"
 Write-host "`t- $Tier0NoPIM without PIM (permanent admin) $warning" 
-Write-host "`t- $Tier0NoPRMFA without MFA phish resistant $warning" 
+Write-host "`t- $Tier0NoPRMFA without MFA phish resistant available $warning" 
 
 #Tier1
 $Tier1Admins        = $AdminRolesDetail | where Tier -eq "1"
@@ -233,7 +234,7 @@ if ($Tier1NoPRMFA -ge 1) {$warningMFA = "⚠️"} else {$warningMFA = ""}
 Write-host "Tier 1 : " -ForegroundColor Darkyellow -NoNewline
 Write-host "$Tier1AdminsCount admins"
 Write-host "`t- $Tier1NoPIM without PIM (permanent admin) $warningPIM" 
-Write-host "`t- $Tier1NoPRMFA without MFA phish resistant $warningMFA" 
+Write-host "`t- $Tier1NoPRMFA without MFA phish resistant available $warningMFA" 
 
 #Tier2 or untiered
 $Tier2Admins        = $AdminRolesDetail | where Tier -eq "2"
@@ -246,6 +247,6 @@ if ($Tier2NoPRMFA -ge 10) {$warningMFA = "⚠️"} else {$warningMFA = ""}
 Write-host "Tier 2 (or untiered) : " -ForegroundColor Magenta -NoNewline
 Write-host "$Tier2AdminsCount admins"
 Write-host "`t- $Tier2NoPIM without PIM (permanent admin) $warningPIM" 
-Write-host "`t- $Tier2NoPRMFA without MFA phish resistant $warningMFA" 
+Write-host "`t- $Tier2NoPRMFA without MFA phish resistant available $warningMFA" 
 
 # out enabled/MFA methods/last sign in/Sign ins IPs
