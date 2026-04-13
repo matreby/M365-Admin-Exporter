@@ -117,9 +117,13 @@ Write-host "- Exporting PIM configuration for all roles..." -ForegroundColor Dar
 $PIMRolePolicies    = Invoke-MgGraphRequestPaging -Uri $PIMRolePoliciesURI
 Write-host "--- ✅ Graph exports done ---" -ForegroundColor Green
 
-Write-host "- Importing roles tier definition (aztier.com)... " -ForegroundColor DarkGray -NoNewline
-$tierRoles = Get-Content "$WorkingFolder\tiered-entra-roles.json" | ConvertFrom-Json #https://github.com/emiliensocchi/azure-tiering/blob/main/Entra%20roles/tiered-entra-roles.json
-write-host "$($TierRoles.count) found"
+Write-host "- Importing roles tier definition (aztier.com)... " -ForegroundColor DarkGray
+if (!(test-path "$WorkingFolder\tiered-entra-roles.json")){
+    Write-host "file not found, trying to download it" -ForegroundColor Yellow
+    (Invoke-WebRequest "https://raw.githubusercontent.com/emiliensocchi/azure-tiering/refs/heads/main/Entra%20roles/tiered-entra-roles.json").content | out-file "$WorkingFolder\tiered-entra-roles.json"
+}
+$tierRoles = Get-Content "$WorkingFolder\tiered-entra-roles.json" | ConvertFrom-Json 
+write-host "$($TierRoles.count) role tier definition found"
 if ($null -eq $tierRoles){Write-warning "Failed to get Entra roles tier definition"}
 else {write-host "--- ✅ done ---" -ForegroundColor Green}
 
