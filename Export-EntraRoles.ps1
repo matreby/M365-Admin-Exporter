@@ -27,7 +27,64 @@ function Invoke-MgGraphRequestPaging {
     return $results
 }
 
+function Get-AssignmentInfo {
+    param (
+        $assignment,
+        $PIM = $false
+    )
+    
+    $UserMFAMethods = ""
+    $UserMFAphishresistant = ""
+    if ($assignment.principal.'@odata.type' -like "*user*") {
+        $userid = $assignment.principal.id
+        $UserMFAUri = "https://graph.microsoft.com/beta/users/$userid/authentication/methods"
+        $UserMFA = Invoke-MgGraphRequestPaging -uri $UserMFAUri
+        $UserMFAMethods = $UserMFA.'@odata.type' -replace "#microsoft.graph.","" -replace "AuthenticationMethod","" -join "|"
+        $UserMFAphishresistant = if ($UserMFAMethods -like "*fido2*" -or $UserMFAMethods -like "*windowsHelloForBusiness*"){"Yes"} else {"No"}
+    }
+    
+    $NbGroupMembers = ""
+    if ($assignment.principal.'@odata.type' -like "*group*"){
+        $NbGroupMembers = (($AssignableGroups | where DisplayName -eq $assignment.principal.displayName).members).count
+    }
+
+    if ($PIM -eq $false){
+        $MembershipType = "DIRECT"
+        $PIMDuration    = ""
+        $PIMValidation  = ""
+        $PIMApproval    = ""
+        $PIMAuthContext = ""
+    } else {
+        $MembershipType = "ELIGIBLE"
+        $PIMDuration    = (($PIMRolePolicies | where roleDefinitionId -eq $role.roleDefinitionId).policy.rules | where id -eq "Expiration_EndUser_Assignment").maximumDuration -replace "PT",""
+        $PIMValidation  = ((($PIMRolePolicies | where roleDefinitionId -eq $role.roleDefinitionId).policy.rules | where id -eq  "Enablement_EndUser_Assignment").enabledRules | select -Unique) -join "|"
+        $PIMApproval    = (($PIMRolePolicies | where roleDefinitionId -eq $role.roleDefinitionId).policy.rules | where id -eq  "Approval_EndUser_Assignment").setting.isApprovalRequired
+        $PIMAuthContext = (($PIMRolePolicies | where roleDefinitionId -eq $role.roleDefinitionId).policy.rules | where id -eq  "AuthenticationContext_EndUser_Assignment").claimvalue
+    }
+
+    $AssignmentInfo = [PSCustomObject]@{
+        Role                        = ($RoleDefinitions | Where-Object id -eq $assignment.roleDefinitionid).displayName
+        Tier                        = ($tierRoles | where id -eq $assignment.roleDefinitionId).tier
+        PrincipalType               = $assignment.principal.'@odata.type' -replace "#microsoft.graph.",""
+        MembershipType              = $MembershipType
+        DisplayName                 = $assignment.principal.DisplayName
+        UserPrincipalName           = $assignment.principal.userprincipalname
+        Enabled                     = $assignment.principal.accountEnabled
+        MFAphishresistantAvailable  = $UserMFAphishresistant
+        MFAMethods                  = $UserMFAMethods
+        NumberOfGroupMembers        = $NbGroupMembers
+        PIMDuration                 = $PIMDuration
+        PIMValidation               = $PIMValidation
+        PIMApproval                 = $PIMApproval
+        PIMAuthContext              = $PIMAuthContext
+        
+    }
+
+    return $AssignmentInfo
+}
+
 Import-Module Microsoft.Graph.Authentication
+
 if ($null -eq (Get-MgContext)) {
     Write-host "Connecting to MgGraph..."
     Connect-MgGraph -Scopes "Directory.Read.All","RoleManagement.Read.All","UserAuthenticationMethod.Read.All" #"RoleManagementPolicy.Read.AzureADGroup"
@@ -48,7 +105,7 @@ $PIMRolePoliciesURI     = "https://graph.microsoft.com/beta/policies/roleManagem
 
 # Graph requests
 Write-host "Starting Graph Exports"
-Write-host "- Exporting role defitinitions..." -ForegroundColor DarkGray
+Write-host "- Exporting role definitions..." -ForegroundColor DarkGray
 $RoleDefinitions    = Invoke-MgGraphRequestPaging -Uri $RoleDefinitionsURI
 Write-host "- Exporting permanent role assignments..." -ForegroundColor DarkGray
 $RoleAssignments    = Invoke-MgGraphRequestPaging -Uri $RoleAssignmentsURI
@@ -60,97 +117,35 @@ Write-host "- Exporting PIM configuration for all roles..." -ForegroundColor Dar
 $PIMRolePolicies    = Invoke-MgGraphRequestPaging -Uri $PIMRolePoliciesURI
 Write-host "--- ✅ Graph exports done ---" -ForegroundColor Green
 
-Write-host "- Importing roles tier definition (aztier.com)..." -ForegroundColor DarkGray
+Write-host "- Importing roles tier definition (aztier.com)... " -ForegroundColor DarkGray -NoNewline
 $tierRoles = Get-Content "$WorkingFolder\tiered-entra-roles.json" | ConvertFrom-Json #https://github.com/emiliensocchi/azure-tiering/blob/main/Entra%20roles/tiered-entra-roles.json
+write-host "$($TierRoles.count) found"
 if ($null -eq $tierRoles){Write-warning "Failed to get Entra roles tier definition"}
 else {write-host "--- ✅ done ---" -ForegroundColor Green}
 
+Write-Host "Processing permanent assignments... " -ForegroundColor DarkGray -NoNewline
 $AssignedRoles = @()
 foreach ($role in $RoleAssignments) {
-    $UserMFAMethods = ""
-    $UserMFAphishresistant = ""
-    if ($role.principal.'@odata.type' -like "*user*") {
-        $userid = $role.principal.id
-        $UserMFAUri = "https://graph.microsoft.com/beta/users/$userid/authentication/methods"
-        $UserMFA = Invoke-MgGraphRequestPaging -uri $UserMFAUri
-        $UserMFAMethods = $UserMFA.'@odata.type' -replace "#microsoft.graph.","" -replace "AuthenticationMethod","" -join "|"
-        $UserMFAphishresistant = if ($UserMFAMethods -like "*fido2*" -or $UserMFAMethods -like "*windowsHelloForBusiness*"){"Yes"} else {"No"}
-    }
-    
-    $NbGroupMembers = ""
-    if ($role.principal.'@odata.type' -like "*group*"){
-        $NbGroupMembers = (($AssignableGroups | where DisplayName -eq $role.principal.displayName).members).count
-    }
-
-    $current = [PSCustomObject]@{
-        Role                        = ($RoleDefinitions | Where-Object id -eq $role.roleDefinitionid).displayName
-        Tier                        = ($tierRoles | where id -eq $role.roleDefinitionId).tier
-        PrincipalType               = $role.principal.'@odata.type' -replace "#microsoft.graph.",""
-        MembershipType              = "DIRECT"
-        DisplayName                 = $role.principal.DisplayName
-        UserPrincipalName           = $role.principal.userprincipalname
-        Enabled                     = $role.principal.accountEnabled
-        MFAphishresistantAvailable  = $UserMFAphishresistant
-        MFAMethods                  = $UserMFAMethods
-        NumberOfGroupMembers        = $NbGroupMembers
-        #LastSignIn = $role.principal.signInSessionsValidFromDateTime
-        #MFA methods
-        #Last IP
-    }
-    $AssignedRoles += $current
+    $AssignedRoles += Get-AssignmentInfo -assignment $role
 }
+write-host "$($assignedRoles.count) found"
 
+Write-host "Processing eligible assignments... " -ForegroundColor DarkGray -NoNewline
 $EligibleRoles = @()
 foreach ($role in $RoleEligibility) {
-    $UserMFAMethods = ""
-    $UserMFAphishresistant = ""
-    if ($role.principal.'@odata.type' -like "*user*") {
-        $userid = $role.principal.id
-        $UserMFAUri = "https://graph.microsoft.com/beta/users/$userid/authentication/methods"
-        $UserMFA = Invoke-MgGraphRequestPaging -uri $UserMFAUri
-        $UserMFAMethods = $UserMFA.'@odata.type' -replace "#microsoft.graph.","" -replace "AuthenticationMethod","" -join "|"
-        $UserMFAphishresistant = if ($UserMFAMethods -like "*fido2*" -or $UserMFAMethods -like "*windowsHelloForBusiness*"){"Yes"} else {"No"}
-    }
-
-    $NbGroupMembers = ""
-    if ($role.principal.'@odata.type' -like "*group*"){
-        $NbGroupMembers = (($AssignableGroups | where DisplayName -eq $role.principal.displayName).members).count
-    }
-    
-    $current = [PSCustomObject]@{
-        Role                = ($RoleDefinitions | Where-Object id -eq $role.roleDefinitionid).displayName
-        Tier                = ($tierRoles | where id -eq $role.roleDefinitionId).tier
-        PrincipalType       = $role.principal.'@odata.type' -replace "#microsoft.graph.",""
-        MembershipType      = "ELIGIBLE"
-        DisplayName         = $role.principal.DisplayName
-        UserPrincipalName   = $role.principal.userprincipalname
-        Enabled             = $role.principal.accountEnabled
-        MFAphishresistantAvailable  = $UserMFAphishresistant
-        MFAMethods                  = $UserMFAMethods
-        #LastSignIn = $role.principal.signInSessionsValidFromDateTime
-        #MFA methods
-        #Last IP
-        NumberOfGroupMembers        = $NbGroupMembers
-        PIMDuration          = (($PIMRolePolicies | where roleDefinitionId -eq $role.roleDefinitionId).policy.rules | where id -eq "Expiration_EndUser_Assignment").maximumDuration -replace "PT",""
-        PIMValidation        = ((($PIMRolePolicies | where roleDefinitionId -eq $role.roleDefinitionId).policy.rules | where id -eq  "Enablement_EndUser_Assignment").enabledRules | select -Unique) -join "|"
-        PIMApproval          = (($PIMRolePolicies | where roleDefinitionId -eq $role.roleDefinitionId).policy.rules | where id -eq  "Approval_EndUser_Assignment").setting.isApprovalRequired
-        PIMAuthContext       = (($PIMRolePolicies | where roleDefinitionId -eq $role.roleDefinitionId).policy.rules | where id -eq  "AuthenticationContext_EndUser_Assignment").claimvalue
-    }
-    $EligibleRoles += $current
+    $EligibleRoles += Get-AssignmentInfo -assignment $role -PIM $True
 }
+write-host "$($EligibleRoles.count) found"
+write-host "--- ✅ done ---" -ForegroundColor Green
 
-$allroles = ($AssignedRoles + $EligibleRoles) | Sort-Object Role
+Write-host "Exporting all assignments to $WorkingFolder\AdminRolesSummary.csv..." -ForegroundColor DarkGray
+$AllRoleAssignments = ($AssignedRoles + $EligibleRoles) | Sort-Object Tier,Role
+$AllRoleAssignments | export-csv $WorkingFolder\AdminRolesSummary.csv -NoTypeInformation -Delimiter ";" -Force -Encoding utf8
+write-host "--- ✅ done ---" -ForegroundColor Green
 
+Write-host "Expanding role assignable groups... " -ForegroundColor DarkGray -NoNewline
 $AdminGroups = @()
 foreach ($group in $AssignableGroups){
-    $GroupId = $group.id
-    $PIMGroupsPoliciesURI   = "https://graph.microsoft.com/beta/policies/roleManagementPolicyAssignments?`$filter=scopeId eq '$groupID' and scopeType eq 'Group'&`$expand=policy(`$expand=rules)"
-    $PIMGroupPolicy         = Invoke-MgGraphRequestPaging -uri $PIMGroupsPoliciesURI   
-    $PIMEnabled             = switch ((($PIMGroupPolicy | where roleDefinitionId -eq "member").policy).lastModifiedDateTime) {
-            $null {"No"}
-            Default {"Yes"}
-        }
-
     $current = [PSCustomObject]@{
         DisplayName         = $group.displayName
         Role                = ($allroles | where DisplayName -eq $group.displayName).Role -join "|"
@@ -159,14 +154,16 @@ foreach ($group in $AssignableGroups){
         #PIMforGrpEnabled    = $PIMEnabled
     }
 
-    #if ($PIMEnabled -eq "Yes") {
-    #    $current | Add-Member -NotePropertyName PIMRules -NotePropertyValue (($PIMGroupPolicy | where roleDefinitionId -eq "member").policy.rules | where id -eq "Enablement_EndUser_Assignment").enabledRules
-    #    $current | Add-Member -NotePropertyName PIMDuration -NotePropertyValue ((($PIMGroupPolicy | where roleDefinitionId -eq "member").policy.rules | where id -eq "Expiration_EndUser_Assignment").maximumDuration).replace "PT",""
-    #}
-
     $AdminGroups += $current
 }
+write-host "$($Admingroups.count) groups found"
+write-host "--- ✅ done ---" -ForegroundColor Green
 
+Write-host "Exporting all role assignable groups to $WorkingFolder\AdminEligibleGroups.csv..." -ForegroundColor DarkGray
+$AdminGroups | export-csv $WorkingFolder\AdminEligibleGroups.csv -NoTypeInformation -Delimiter ";" -Force -Encoding utf8
+write-host "--- ✅ done ---" -ForegroundColor Green
+
+Write-host "Resolving group members and role assignments to create the complete report..." -ForegroundColor DarkGray
 $AdminRolesDetail = @()
 foreach ($role in $allroles){
     if ($role.principalType -eq "group") {
@@ -192,9 +189,6 @@ foreach ($role in $allroles){
                 Enabled             = $mgmember.accountEnabled
                 MFAphishresistantAvailable  = $UserMFAphishresistant
                 MFAMethods                  = $UserMFAMethods
-                #LastSignIn = $role.principal.signInSessionsValidFromDateTime
-                #MFA methods
-                #Last IP
                 AssignedThrough      = $role.DisplayName
                 PIMDuration          = $role.PIMDuration
                 PIMValidation        = $role.PIMValidation
@@ -211,11 +205,11 @@ foreach ($role in $allroles){
     }
 
 }
+write-host "--- ✅ done ---" -ForegroundColor Green
 
-#Export
-$allroles | export-csv $WorkingFolder\AdminRolesSummary.csv -NoTypeInformation -Delimiter ";" -Force -Encoding utf8
-$AdminGroups | export-csv $WorkingFolder\AdminEligibleGroups.csv -NoTypeInformation -Delimiter ";" -Force -Encoding utf8
+Write-host "Exporting all role assignable groups to $WorkingFolder\AdminRolesDetails.csv..." -ForegroundColor DarkGray
 $AdminRolesDetail | select -ExcludeProperty NumberOfGroupMembers | export-csv $WorkingFolder\AdminRolesDetails.csv -NoTypeInformation -Delimiter ";" -Force -Encoding utf8
+write-host "--- ✅ done ---" -ForegroundColor Green
 
 #Analysis
 Write-host "Export completed : $WorkingFolder" -ForegroundColor Cyan
