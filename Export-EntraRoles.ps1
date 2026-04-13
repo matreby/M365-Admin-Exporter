@@ -200,15 +200,15 @@ foreach ($role in $allroles){
     } 
     else {
         $current = $role     
+        $current | add-member -NotePropertyName AssignedThrough -NotePropertyValue "Direct" -force
         $AdminRolesDetail += $current
-        $AdminRolesDetail | add-member -NotePropertyName AssignedThrough -NotePropertyValue "Direct" -force
     }
 
 }
 write-host "--- ✅ done ---" -ForegroundColor Green
 
 Write-host "Exporting all role assignable groups to $WorkingFolder\AdminRolesDetails.csv..." -ForegroundColor DarkGray
-$AdminRolesDetail | select -ExcludeProperty NumberOfGroupMembers | export-csv $WorkingFolder\AdminRolesDetails.csv -NoTypeInformation -Delimiter ";" -Force -Encoding utf8
+$AdminRolesDetail | select -ExcludeProperty NumberOfGroupMembers | sort-object Tier,Role | export-csv $WorkingFolder\AdminRolesDetails.csv -NoTypeInformation -Delimiter ";" -Force -Encoding utf8
 write-host "--- ✅ done ---" -ForegroundColor Green
 
 #Analysis
