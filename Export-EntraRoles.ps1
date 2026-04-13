@@ -49,7 +49,7 @@ function Get-AssignmentInfo {
     }
 
     if ($PIM -eq $false){
-        $MembershipType = "DIRECT"
+        $MembershipType = "PERMANENT"
         $PIMDuration    = ""
         $PIMValidation  = ""
         $PIMApproval    = ""
@@ -70,13 +70,13 @@ function Get-AssignmentInfo {
         DisplayName                 = $assignment.principal.DisplayName
         UserPrincipalName           = $assignment.principal.userprincipalname
         Enabled                     = $assignment.principal.accountEnabled
-        MFAphishresistantAvailable  = $UserMFAphishresistant
-        MFAMethods                  = $UserMFAMethods
         NumberOfGroupMembers        = $NbGroupMembers
         PIMDuration                 = $PIMDuration
         PIMValidation               = $PIMValidation
         PIMApproval                 = $PIMApproval
         PIMAuthContext              = $PIMAuthContext
+        MFAphishresistantAvailable  = $UserMFAphishresistant
+        MFAMethods                  = $UserMFAMethods
         id                          = $assignment.principal.Id
     }
 
