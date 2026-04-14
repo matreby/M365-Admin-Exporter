@@ -16,7 +16,7 @@ The script also export authentication methods registred for each admin to evalua
 
 ## Output
 - Quick recap in console (number of admin per tier, PIM not enabled, MFA phish resistant not available)
-- **AdminRoleSummary.csv** : Direct members of each Entra role
+- **AdminRolesSummary.csv** : Direct members of each Entra role
 - **AdminRolesDetails.csv** : All principals directly or not assigned to Entra role
 - **AdminEligibleGroups.csv** : All Entra groups eligible to role assignment
 ![image](output.png)
