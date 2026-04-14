@@ -19,7 +19,7 @@ function Invoke-MgGraphRequestPaging {
             
         }
         catch {
-            Write-error $err
+            Write-error $_
             return "ERROR"
         }
     }
@@ -84,6 +84,7 @@ function Get-AssignmentInfo {
 }
 
 Import-Module Microsoft.Graph.Authentication
+$ProgressPreference = "Continue" #Replace by SilentlyContinue to mask progress bar and gain performances
 
 if ($null -eq (Get-MgContext)) {
     Write-host "Connecting to MgGraph..."
@@ -102,6 +103,7 @@ $RoleAssignmentsURI     = "https://graph.microsoft.com/beta/roleManagement/direc
 $RoleEligibilityURI     = "https://graph.microsoft.com/beta/roleManagement/directory/roleEligibilitySchedules?`$expand=principal"
 $AssignableGroupsURI    = "https://graph.microsoft.com/beta/groups?`$filter=isassignabletorole eq true&`$expand=members"
 $PIMRolePoliciesURI     = "https://graph.microsoft.com/beta/policies/roleManagementPolicyAssignments?`$filter=scopeId eq '/' and scopeType eq 'DirectoryRole'&`$expand=policy(`$expand=rules)"
+$PIMRolesActivatedURI   = "https://graph.microsoft.com/beta/roleManagement/directory/roleAssignmentSchedules?`$filter=assignmentType eq 'Activated'"
 
 # Graph requests
 Write-host "Starting Graph Exports"
@@ -115,6 +117,8 @@ Write-host "- Exporting role assignable groups..." -ForegroundColor DarkGray
 $AssignableGroups   = Invoke-MgGraphRequestPaging -uri $AssignableGroupsURI
 Write-host "- Exporting PIM configuration for all roles..." -ForegroundColor DarkGray
 $PIMRolePolicies    = Invoke-MgGraphRequestPaging -Uri $PIMRolePoliciesURI
+Write-host "- Exporting currently activated PIM roles..." -ForegroundColor DarkGray
+$PIMRolesActivated  = Invoke-MgGraphRequestPaging -Uri $PIMRolesActivatedURI
 Write-host "--- ✅ Graph exports done ---" -ForegroundColor Green
 
 Write-host "- Importing roles tier definition (aztier.com)... " -ForegroundColor DarkGray
@@ -129,16 +133,25 @@ else {write-host "--- ✅ done ---" -ForegroundColor Green}
 
 Write-Host "Processing permanent assignments... " -ForegroundColor DarkGray -NoNewline
 $AssignedRoles = @()
+$i=0;$j=$RoleAssignments.count
 foreach ($role in $RoleAssignments) {
-    $AssignedRoles += Get-AssignmentInfo -assignment $role
+    $i++;Write-Progress -Activity "In Progress..." -PercentComplete ($i/$j*100) -Status "$i/$j"
+    #Exclude PIM activated roles from permanent assignemnts
+    if ($null -eq ($PIMRolesActivated | where {$_.principalId -eq $role.principalId -and $_.roleDefinitionId -eq $role.roleDefinitionId})){
+        $AssignedRoles += Get-AssignmentInfo -assignment $role
+    }
 }
+Write-Progress -Activity "In progress..." -Completed
 write-host "$($assignedRoles.count) found"
 
 Write-host "Processing eligible assignments... " -ForegroundColor DarkGray -NoNewline
 $EligibleRoles = @()
+$i=0;$j=$RoleEligibility.count
 foreach ($role in $RoleEligibility) {
+    $i++;Write-Progress -Activity "In Progress..." -PercentComplete ($i/$j*100) -Status "$i/$j"
     $EligibleRoles += Get-AssignmentInfo -assignment $role -PIM $True
 }
+Write-Progress -Activity "In progress..." -Completed
 write-host "$($EligibleRoles.count) found"
 write-host "--- ✅ done ---" -ForegroundColor Green
 
@@ -149,7 +162,9 @@ write-host "--- ✅ done ---" -ForegroundColor Green
 
 Write-host "Expanding role assignable groups... " -ForegroundColor DarkGray -NoNewline
 $AdminGroups = @()
+$i=0;$j=$AssignableGroups.count
 foreach ($group in $AssignableGroups){
+    $i++;Write-Progress -Activity "In Progress..." -PercentComplete ($i/$j*100) -Status "$i/$j"
     $current = [PSCustomObject]@{
         DisplayName         = $group.displayName
         Role                = ($AllRoleAssignments | where DisplayName -eq $group.displayName).Role -join "|"
@@ -161,6 +176,7 @@ foreach ($group in $AssignableGroups){
 
     $AdminGroups += $current
 }
+Write-Progress -Activity "In progress..." -Completed
 write-host "$($Admingroups.count) groups found"
 write-host "--- ✅ done ---" -ForegroundColor Green
 
@@ -170,7 +186,9 @@ write-host "--- ✅ done ---" -ForegroundColor Green
 
 Write-host "Resolving group members and role assignments to create the complete report..." -ForegroundColor DarkGray
 $AdminRolesDetail = @()
+$i=0;$j=$AllRoleAssignments.count
 foreach ($role in $AllRoleAssignments){
+    $i++;Write-Progress -Activity "In Progress..." -PercentComplete ($i/$j*100) -Status "$i/$j"
     if ($role.principalType -eq "group") {
         $members = ($AdminGroups | where DisplayName -eq $role.DisplayName).MembersID
         foreach ($member in $members) {
@@ -210,6 +228,7 @@ foreach ($role in $AllRoleAssignments){
     }
 
 }
+Write-Progress -Activity "In progress..." -Completed
 write-host "--- ✅ done ---" -ForegroundColor Green
 
 Write-host "Exporting all role assignable groups to $WorkingFolder\AdminRolesDetails.csv..." -ForegroundColor DarkGray
