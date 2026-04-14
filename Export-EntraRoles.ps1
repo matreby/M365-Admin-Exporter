@@ -217,6 +217,7 @@ foreach ($role in $AllRoleAssignments){
                 PIMValidation        = $role.PIMValidation
                 PIMApproval          = $role.PIMApproval
                 PIMAuthContext       = $Role.PIMAuthContext
+                id                   = $role.id
             }
             $AdminRolesDetail += $current
         }
@@ -237,49 +238,54 @@ write-host "--- ✅ done ---" -ForegroundColor Green
 
 #Analysis
 Write-host "Export completed : $WorkingFolder" -ForegroundColor Cyan
-Write-host "--------------------------------"
+Write-host "----------------------------------------"
 $NumberOfRoles = ($AllRoleAssignments | where role -ne $null | select role -Unique).count
 $NumberOfAssignments = $AdminRolesDetail.count
-Write-Host "Found $NumberOfRoles admin roles with $NumberOfAssignments assignments"
+Write-Host "Found $NumberOfRoles admin roles with $NumberOfAssignments assignments" -ForegroundColor Cyan
+Write-host "-------"
 #Tier0
-$Tier0Admins        = $AdminRolesDetail | where Tier -eq "0"
-$Tier0AdminsCount   = $Tier0Admins.count
-$Tier0GAAdmins      = ($AdminRolesDetail | where Role -eq "Global Administrator").count
-$Tier0NoPIM         = ($Tier0Admins | where MembershipType -ne "ELIGIBLE").count
-$Tier0NoPRMFA       = ($Tier0Admins | where MFAphishresistantAvailable -ne "YES").count
+$Tier0Admins              = $AdminRolesDetail | where Tier -eq "0"
+$Tier0AdminsCount         = $Tier0Admins.count
+$Tier0UniqueAdminsCount   = ($Tier0Admins | select id -unique).count
+$Tier0GAAdmins            = ($AdminRolesDetail | where Role -eq "Global Administrator").count
+$Tier0NoPIM               = ($Tier0Admins | where MembershipType -ne "ELIGIBLE").count
+$Tier0NoPRMFA             = ($Tier0Admins | where MFAphishresistantAvailable -ne "YES").count
 if ($Tier0AdminsCount -ge 20) {$WarningT0 = "⚠️"} else {$WarningT0 = ""}
 if ($Tier0NoPIM -ge 1){$WarningPIM = "⚠️"} else {$warningPIM = ""}
 if ($Tier0NoPRMFA -ge 1){$WarningMFA = "⚠️"} else {$warningMFA = ""}
 if ($Tier0GAAdmins -ge 5){$WarningGA = "⚠️"} else {$warningGA = ""}
 Write-host "Tier 0 : " -ForegroundColor DarkRed -NoNewline
-Write-host "$Tier0AdminsCount admins $warningT0"
+Write-host "$Tier0AdminsCount assignments ($Tier0UniqueAdminsCount admins) $warningT0"
 Write-host "`t- $Tier0GAAdmins Global Admins $warningGA"
 Write-host "`t- $Tier0NoPIM without PIM (permanent admin) $warningPIM" 
 Write-host "`t- $Tier0NoPRMFA without MFA phish resistant available $warningMFA" 
+Write-host "-------"
 
 #Tier1
-$Tier1Admins        = $AdminRolesDetail | where Tier -eq "1"
-$Tier1AdminsCount   = $Tier1Admins.count
-$Tier1NoPIM         = ($Tier1Admins | where MembershipType -ne "ELIGIBLE").count
-$Tier1NoPRMFA       = ($Tier1Admins | where MFAphishresistantAvailable -ne "YES").count
+$Tier1Admins              = $AdminRolesDetail | where Tier -eq "1"
+$Tier1AdminsCount         = $Tier1Admins.count
+$Tier1UniqueAdminsCount   = ($Tier1Admins | select id -unique).count
+$Tier1NoPIM               = ($Tier1Admins | where MembershipType -ne "ELIGIBLE").count
+$Tier1NoPRMFA             = ($Tier1Admins | where MFAphishresistantAvailable -ne "YES").count
 if ($Tier1NoPIM -ge 5)   {$warningPIM = "⚠️"} else {$warningPIM = ""}
 if ($Tier1NoPRMFA -ge 1) {$warningMFA = "⚠️"} else {$warningMFA = ""}
 Write-host "Tier 1 : " -ForegroundColor Darkyellow -NoNewline
-Write-host "$Tier1AdminsCount admins"
+Write-host "$Tier1AdminsCount assignments ($Tier1UniqueAdminsCount admins)"
 Write-host "`t- $Tier1NoPIM without PIM (permanent admin) $warningPIM" 
 Write-host "`t- $Tier1NoPRMFA without MFA phish resistant available $warningMFA" 
+Write-host "-------"
 
 #Tier2 or untiered
-$Tier2Admins        = $AdminRolesDetail | where Tier -eq "2"
-$Tier2Admins       += $AdminRolesDetail | where Tier -eq $null
-$Tier2AdminsCount   = $Tier2Admins.count
-$Tier2NoPIM         = ($Tier2Admins | where MembershipType -ne "ELIGIBLE").count
-$Tier2NoPRMFA       = ($Tier2Admins | where MFAphishresistantAvailable -ne "YES").count
+$Tier2Admins            = $AdminRolesDetail | where Tier -eq "2"
+$Tier2Admins           += $AdminRolesDetail | where Tier -eq $null
+$Tier2AdminsCount       = $Tier2Admins.count
+$Tier2UniqueAdminsCount = ($Tier2Admins | select id -unique).count
+$Tier2NoPIM             = ($Tier2Admins | where MembershipType -ne "ELIGIBLE").count
+$Tier2NoPRMFA           = ($Tier2Admins | where MFAphishresistantAvailable -ne "YES").count
 if ($Tier2NoPIM -ge 50)   {$warningPIM = "⚠️"} else {$warningPIM = ""}
 if ($Tier2NoPRMFA -ge 50) {$warningMFA = "⚠️"} else {$warningMFA = ""}
 Write-host "Tier 2 (or untiered) : " -ForegroundColor Magenta -NoNewline
-Write-host "$Tier2AdminsCount admins"
+Write-host "$Tier2AdminsCount assignments ($Tier2UniqueAdminsCount admins)"
 Write-host "`t- $Tier2NoPIM without PIM (permanent admin) $warningPIM" 
 Write-host "`t- $Tier2NoPRMFA without MFA phish resistant available $warningMFA" 
-
-# out enabled/MFA methods/last sign in/Sign ins IPs
+Write-host "-------"
