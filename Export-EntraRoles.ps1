@@ -11,7 +11,7 @@ function Invoke-MgGraphRequestPaging {
         try {
             $req = Invoke-MgGraphRequest -Uri $currentUri -Method $Method -OutputType PSObject -ErrorAction stop
             $results += $req.value
-            if ($req.'@odata.nextLink' -ne $null) {
+            if ($null -ne $req.'@odata.nextLink') {
                 $currentUri = $req.'@odata.nextLink'
             } else {
                 $currentUri = $null
@@ -44,7 +44,7 @@ function Get-AssignmentInfo {
     
     $NbGroupMembers = ""
     #if ($assignment.principal.'@odata.type' -like "*group*"){
-        #$NbGroupMembers = ($AssignableGroupsMembers | where ParentGroupID -eq $assignment.principal.id).count
+        #$NbGroupMembers = ($AssignableGroupsMembers |  Where-Object ParentGroupID -eq $assignment.principal.id).count
     #}
 
     if ($PIM -eq $false){
@@ -54,17 +54,17 @@ function Get-AssignmentInfo {
         $PIMApproval    = ""
         $PIMAuthContext = ""
     } else {
-        $PIMRules = ($PIMRolePolicies | where roleDefinitionId -eq $assignment.roleDefinitionId).policy.rules
+        $PIMRules = ($PIMRolePolicies |  Where-Object roleDefinitionId -eq $assignment.roleDefinitionId).policy.rules
         $MembershipType = "ELIGIBLE"
-        $PIMDuration    = ($PIMRules  | where id -eq "Expiration_EndUser_Assignment").maximumDuration -replace "PT",""
-        $PIMValidation  = (($PIMRules | where id -eq "Enablement_EndUser_Assignment").enabledRules | select -Unique) -join "|"
-        $PIMApproval    = ($PIMRules  | where id -eq "Approval_EndUser_Assignment").setting.isApprovalRequired
-        $PIMAuthContext = ($PIMRules  | where id -eq "AuthenticationContext_EndUser_Assignment").claimvalue
+        $PIMDuration    = ($PIMRules  |  Where-Object id -eq "Expiration_EndUser_Assignment").maximumDuration -replace "PT",""
+        $PIMValidation  = (($PIMRules |  Where-Object id -eq "Enablement_EndUser_Assignment").enabledRules | Select-Object -Unique) -join "|"
+        $PIMApproval    = ($PIMRules  |  Where-Object id -eq "Approval_EndUser_Assignment").setting.isApprovalRequired
+        $PIMAuthContext = ($PIMRules  |  Where-Object id -eq "AuthenticationContext_EndUser_Assignment").claimvalue
     }
 
     $AssignmentInfo = [PSCustomObject]@{
         Role                        = ($RoleDefinitions | Where-Object id -eq $assignment.roleDefinitionid).displayName
-        Tier                        = ($tierRolesDefinition  | where id -eq $assignment.roleDefinitionId).tier
+        Tier                        = ($tierRolesDefinition  |  Where-Object id -eq $assignment.roleDefinitionId).tier
         PrincipalType               = $assignment.principal.'@odata.type' -replace "#microsoft.graph.",""
         MembershipType              = $MembershipType
         DisplayName                 = $assignment.principal.DisplayName
@@ -101,7 +101,7 @@ if ($WorkingFolder -eq "") {$WorkingFolder = $pwd}
 $RoleDefinitionsURI     = "https://graph.microsoft.com/beta/roleManagement/directory/roleDefinitions?`$top=500"
 $RoleAssignmentsURI     = "https://graph.microsoft.com/beta/roleManagement/directory/roleAssignments?`$expand=principal"
 $RoleEligibilityURI     = "https://graph.microsoft.com/beta/roleManagement/directory/roleEligibilitySchedules?`$expand=principal"
-$AssignableGroupsURI    = "https://graph.microsoft.com/beta/groups?`$filter=isassignabletorole eq true"#&`$expand=members"
+$AssignableGroupsURI    = "https://graph.microsoft.com/beta/groups?`$filter=isassignabletorole eq true&`$expand=owners"
 $PIMRolePoliciesURI     = "https://graph.microsoft.com/beta/policies/roleManagementPolicyAssignments?`$filter=scopeId eq '/' and scopeType eq 'DirectoryRole'&`$expand=policy(`$expand=rules)"
 $PIMRolesActivatedURI   = "https://graph.microsoft.com/beta/roleManagement/directory/roleAssignmentSchedules?`$filter=assignmentType eq 'Activated'"
 $GroupMembersURI        = "https://graph.microsoft.com/beta/groups/<groupid>/members"
@@ -139,7 +139,7 @@ $i=0;$j=$RoleAssignments.count
 foreach ($PermanentAssignment in $RoleAssignments) {
     $i++;Write-Progress -Activity "In Progress..." -PercentComplete ($i/$j*100) -Status "$i/$j"
     #Exclude PIM activated roles from permanent assignemnts
-    if ($null -eq ($PIMRolesActivated | where {$_.principalId -eq $role.principalId -and $_.roleDefinitionId -eq $role.roleDefinitionId})){
+    if ($null -eq ($PIMRolesActivated |  Where-Object {$_.principalId -eq $role.principalId -and $_.roleDefinitionId -eq $role.roleDefinitionId})){
         $AssignedRoles += Get-AssignmentInfo -assignment $PermanentAssignment
     }
 }
@@ -177,8 +177,9 @@ foreach ($group in $AssignableGroups){
 
     $current = [PSCustomObject]@{
         DisplayName         = $group.displayName
-        Role                = ($AllRoleAssignments | where DisplayName -eq $group.displayName).Role -join "|"
-        RoleAssignmentType  = ($AllRoleAssignments | where DisplayName -eq $group.displayName).MembershipType -join "|"
+        Owner               = $group.owners.userPrincipalName -join "|"
+        Role                = ($AllRoleAssignments |  Where-Object DisplayName -eq $group.displayName).Role -join "|"
+        RoleAssignmentType  = ($AllRoleAssignments |  Where-Object DisplayName -eq $group.displayName).MembershipType -join "|"
         MembersUPN          = $GroupMembers.userPrincipalName -join "|" #$group.members.userPrincipalName -join "|"
         MembersID           = $GroupMembers.Id -join "|"  #$group.members.Id
         #PIMforGrpEnabled    = $PIMEnabled
@@ -191,7 +192,7 @@ write-host "$($Admingroups.count) groups found"
 write-host "--- ✅ done ---" -ForegroundColor Green
 
 Write-host "Exporting all role assignable groups to $WorkingFolder\AdminEligibleGroups.csv..." -ForegroundColor DarkGray
-$AdminGroups | select -ExcludeProperty MembersId | export-csv $WorkingFolder\AdminEligibleGroups.csv -NoTypeInformation -Delimiter ";" -Force -Encoding utf8
+$AdminGroups | Select-Object -ExcludeProperty MembersId | export-csv $WorkingFolder\AdminEligibleGroups.csv -NoTypeInformation -Delimiter ";" -Force -Encoding utf8
 write-host "--- ✅ done ---" -ForegroundColor Green
 
 Write-host "Resolving group members and role assignments to create the complete report..." -ForegroundColor DarkGray
@@ -200,7 +201,7 @@ $i=0;$j=$AllRoleAssignments.count
 foreach ($roleAsssignment in $AllRoleAssignments){
     $i++;Write-Progress -Activity "In Progress..." -PercentComplete ($i/$j*100) -Status "$i/$j"
     if ($roleAsssignment.principalType -eq "group") {
-        $members = $AssignableGroupsMembers | where ParentGroupID -eq $roleAsssignment.id
+        $members = $AssignableGroupsMembers |  Where-Object ParentGroupID -eq $roleAsssignment.id
         foreach ($member in $members) {
             $UserMFAMethods = ""
             $UserMFAphishresistant = ""
@@ -241,23 +242,23 @@ Write-Progress -Activity "In progress..." -Completed
 write-host "--- ✅ done ---" -ForegroundColor Green
 
 Write-host "Exporting all role assignable groups to $WorkingFolder\AdminRolesDetails.csv..." -ForegroundColor DarkGray
-$AdminRolesDetails | select Role,Tier,MembershipType,AssignedThrough,PrincipalType,DisplayName,UserPrincipalName,Enabled,PIMDuration,PIMValidation,PIMApproval,PIMAuthContext,MFAphishresistantAvailable,MFAMethods -ExcludeProperty id,NumberOfGroupMembers | sort-object Tier,Role | export-csv $WorkingFolder\AdminRolesDetails.csv -NoTypeInformation -Delimiter ";" -Force -Encoding utf8
+$AdminRolesDetails | Select-Object Role,Tier,MembershipType,AssignedThrough,PrincipalType,DisplayName,UserPrincipalName,Enabled,PIMDuration,PIMValidation,PIMApproval,PIMAuthContext,MFAphishresistantAvailable,MFAMethods -ExcludeProperty id,NumberOfGroupMembers | sort-object Tier,Role | export-csv $WorkingFolder\AdminRolesDetails.csv -NoTypeInformation -Delimiter ";" -Force -Encoding utf8
 write-host "--- ✅ done ---" -ForegroundColor Green
 
 #Analysis
 Write-host "Export completed : $WorkingFolder" -ForegroundColor Cyan
 Write-host "----------------------------------------"
-$NumberOfRoles = ($AllRoleAssignments | where role -ne $null | select role -Unique).count
+$NumberOfRoles = ($AllRoleAssignments |  Where-Object role -ne $null | Select-Object role -Unique).count
 $NumberOfAssignments = $AdminRolesDetails.count
 Write-Host "Found $NumberOfRoles admin roles with $NumberOfAssignments assignments" -ForegroundColor Cyan
 Write-host "-------"
 #Tier0
-$Tier0Admins              = $AdminRolesDetails | where Tier -eq "0"
+$Tier0Admins              = $AdminRolesDetails |  Where-Object Tier -eq "0"
 $Tier0AdminsCount         = $Tier0Admins.count
-$Tier0UniqueAdminsCount   = ($Tier0Admins | select id -unique).count
-$Tier0GAAdmins            = ($AdminRolesDetails | where Role -eq "Global Administrator").count
-$Tier0NoPIM               = ($Tier0Admins | where MembershipType -ne "ELIGIBLE").count
-$Tier0NoPRMFA             = ($Tier0Admins | where MFAphishresistantAvailable -ne "YES").count
+$Tier0UniqueAdminsCount   = ($Tier0Admins | Select-Object id -unique).count
+$Tier0GAAdmins            = ($AdminRolesDetails |  Where-Object Role -eq "Global Administrator").count
+$Tier0NoPIM               = ($Tier0Admins |  Where-Object MembershipType -ne "ELIGIBLE").count
+$Tier0NoPRMFA             = ($Tier0Admins |  Where-Object MFAphishresistantAvailable -ne "YES").count
 if ($Tier0AdminsCount -ge 20) {$WarningT0 = "⚠️"} else {$WarningT0 = ""}
 if ($Tier0NoPIM -ge 1){$WarningPIM = "⚠️"} else {$warningPIM = ""}
 if ($Tier0NoPRMFA -ge 1){$WarningMFA = "⚠️"} else {$warningMFA = ""}
@@ -270,11 +271,11 @@ Write-host "`t- $Tier0NoPRMFA without MFA phish resistant available $warningMFA"
 Write-host "-------"
 
 #Tier1
-$Tier1Admins              = $AdminRolesDetails | where Tier -eq "1"
+$Tier1Admins              = $AdminRolesDetails |  Where-Object Tier -eq "1"
 $Tier1AdminsCount         = $Tier1Admins.count
-$Tier1UniqueAdminsCount   = ($Tier1Admins | select id -unique).count
-$Tier1NoPIM               = ($Tier1Admins | where MembershipType -ne "ELIGIBLE").count
-$Tier1NoPRMFA             = ($Tier1Admins | where MFAphishresistantAvailable -ne "YES").count
+$Tier1UniqueAdminsCount   = ($Tier1Admins | Select-Object id -unique).count
+$Tier1NoPIM               = ($Tier1Admins |  Where-Object MembershipType -ne "ELIGIBLE").count
+$Tier1NoPRMFA             = ($Tier1Admins |  Where-Object MFAphishresistantAvailable -ne "YES").count
 if ($Tier1NoPIM -ge 5)   {$warningPIM = "⚠️"} else {$warningPIM = ""}
 if ($Tier1NoPRMFA -ge 1) {$warningMFA = "⚠️"} else {$warningMFA = ""}
 Write-host "Tier 1 : " -ForegroundColor Darkyellow -NoNewline
@@ -284,12 +285,12 @@ Write-host "`t- $Tier1NoPRMFA without MFA phish resistant available $warningMFA"
 Write-host "-------"
 
 #Tier2 or untiered
-$Tier2Admins            = $AdminRolesDetails | where Tier -eq "2"
-$Tier2Admins           += $AdminRolesDetails | where Tier -eq $null
+$Tier2Admins            = $AdminRolesDetails |  Where-Object Tier -eq "2"
+$Tier2Admins           += $AdminRolesDetails |  Where-Object Tier -eq $null
 $Tier2AdminsCount       = $Tier2Admins.count
-$Tier2UniqueAdminsCount = ($Tier2Admins | select id -unique).count
-$Tier2NoPIM             = ($Tier2Admins | where MembershipType -ne "ELIGIBLE").count
-$Tier2NoPRMFA           = ($Tier2Admins | where MFAphishresistantAvailable -ne "YES").count
+$Tier2UniqueAdminsCount = ($Tier2Admins | Select-Object id -unique).count
+$Tier2NoPIM             = ($Tier2Admins |  Where-Object MembershipType -ne "ELIGIBLE").count
+$Tier2NoPRMFA           = ($Tier2Admins |  Where-Object MFAphishresistantAvailable -ne "YES").count
 if ($Tier2NoPIM -ge 50)   {$warningPIM = "⚠️"} else {$warningPIM = ""}
 if ($Tier2NoPRMFA -ge 50) {$warningMFA = "⚠️"} else {$warningMFA = ""}
 Write-host "Tier 2 (or untiered) : " -ForegroundColor Magenta -NoNewline
