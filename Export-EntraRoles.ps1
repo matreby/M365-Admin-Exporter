@@ -36,17 +36,16 @@ function Get-AssignmentInfo {
     $UserMFAMethods = ""
     $UserMFAphishresistant = ""
     if ($assignment.principal.'@odata.type' -like "*user*") {
-        $userid = $assignment.principal.id
-        $UserMFAUri = "https://graph.microsoft.com/beta/users/$userid/authentication/methods"
-        $UserMFA = Invoke-MgGraphRequestPaging -uri $UserMFAUri
+        $CurrentUserMFAURI = $UserMFAUri -replace "<userid>",$assignment.principal.id
+        $UserMFA = Invoke-MgGraphRequestPaging -uri $CurrentUserMFAURI
         $UserMFAMethods = $UserMFA.'@odata.type' -replace "#microsoft.graph.","" -replace "AuthenticationMethod","" -join "|"
         $UserMFAphishresistant = if ($UserMFAMethods -like "*fido2*" -or $UserMFAMethods -like "*windowsHelloForBusiness*"){"Yes"} else {"No"}
     }
     
     $NbGroupMembers = ""
-    if ($assignment.principal.'@odata.type' -like "*group*"){
-        $NbGroupMembers = (($AssignableGroups | where DisplayName -eq $assignment.principal.displayName).members).count
-    }
+    #if ($assignment.principal.'@odata.type' -like "*group*"){
+        #$NbGroupMembers = ($AssignableGroupsMembers | where ParentGroupID -eq $assignment.principal.id).count
+    #}
 
     if ($PIM -eq $false){
         $MembershipType = "PERMANENT"
@@ -55,22 +54,23 @@ function Get-AssignmentInfo {
         $PIMApproval    = ""
         $PIMAuthContext = ""
     } else {
+        $PIMRules = ($PIMRolePolicies | where roleDefinitionId -eq $assignment.roleDefinitionId).policy.rules
         $MembershipType = "ELIGIBLE"
-        $PIMDuration    = (($PIMRolePolicies | where roleDefinitionId -eq $role.roleDefinitionId).policy.rules | where id -eq "Expiration_EndUser_Assignment").maximumDuration -replace "PT",""
-        $PIMValidation  = ((($PIMRolePolicies | where roleDefinitionId -eq $role.roleDefinitionId).policy.rules | where id -eq  "Enablement_EndUser_Assignment").enabledRules | select -Unique) -join "|"
-        $PIMApproval    = (($PIMRolePolicies | where roleDefinitionId -eq $role.roleDefinitionId).policy.rules | where id -eq  "Approval_EndUser_Assignment").setting.isApprovalRequired
-        $PIMAuthContext = (($PIMRolePolicies | where roleDefinitionId -eq $role.roleDefinitionId).policy.rules | where id -eq  "AuthenticationContext_EndUser_Assignment").claimvalue
+        $PIMDuration    = ($PIMRules  | where id -eq "Expiration_EndUser_Assignment").maximumDuration -replace "PT",""
+        $PIMValidation  = (($PIMRules | where id -eq "Enablement_EndUser_Assignment").enabledRules | select -Unique) -join "|"
+        $PIMApproval    = ($PIMRules  | where id -eq "Approval_EndUser_Assignment").setting.isApprovalRequired
+        $PIMAuthContext = ($PIMRules  | where id -eq "AuthenticationContext_EndUser_Assignment").claimvalue
     }
 
     $AssignmentInfo = [PSCustomObject]@{
         Role                        = ($RoleDefinitions | Where-Object id -eq $assignment.roleDefinitionid).displayName
-        Tier                        = ($tierRoles | where id -eq $assignment.roleDefinitionId).tier
+        Tier                        = ($tierRolesDefinition  | where id -eq $assignment.roleDefinitionId).tier
         PrincipalType               = $assignment.principal.'@odata.type' -replace "#microsoft.graph.",""
         MembershipType              = $MembershipType
         DisplayName                 = $assignment.principal.DisplayName
         UserPrincipalName           = $assignment.principal.userprincipalname
         Enabled                     = $assignment.principal.accountEnabled
-        NumberOfGroupMembers        = $NbGroupMembers
+        #NumberOfGroupMembers        = $NbGroupMembers
         PIMDuration                 = $PIMDuration
         PIMValidation               = $PIMValidation
         PIMApproval                 = $PIMApproval
@@ -101,9 +101,11 @@ if ($WorkingFolder -eq "") {$WorkingFolder = $pwd}
 $RoleDefinitionsURI     = "https://graph.microsoft.com/beta/roleManagement/directory/roleDefinitions?`$top=500"
 $RoleAssignmentsURI     = "https://graph.microsoft.com/beta/roleManagement/directory/roleAssignments?`$expand=principal"
 $RoleEligibilityURI     = "https://graph.microsoft.com/beta/roleManagement/directory/roleEligibilitySchedules?`$expand=principal"
-$AssignableGroupsURI    = "https://graph.microsoft.com/beta/groups?`$filter=isassignabletorole eq true&`$expand=members"
+$AssignableGroupsURI    = "https://graph.microsoft.com/beta/groups?`$filter=isassignabletorole eq true"#&`$expand=members"
 $PIMRolePoliciesURI     = "https://graph.microsoft.com/beta/policies/roleManagementPolicyAssignments?`$filter=scopeId eq '/' and scopeType eq 'DirectoryRole'&`$expand=policy(`$expand=rules)"
 $PIMRolesActivatedURI   = "https://graph.microsoft.com/beta/roleManagement/directory/roleAssignmentSchedules?`$filter=assignmentType eq 'Activated'"
+$GroupMembersURI        = "https://graph.microsoft.com/beta/groups/<groupid>/members"
+$UserMFAUri             = "https://graph.microsoft.com/beta/users/<userid>/authentication/methods"
 
 # Graph requests
 Write-host "Starting Graph Exports"
@@ -126,19 +128,19 @@ if (!(test-path "$WorkingFolder\tiered-entra-roles.json")){
     Write-host "file not found, trying to download it" -ForegroundColor Yellow
     (Invoke-WebRequest "https://raw.githubusercontent.com/emiliensocchi/azure-tiering/refs/heads/main/Entra%20roles/tiered-entra-roles.json").content | out-file "$WorkingFolder\tiered-entra-roles.json"
 }
-$tierRoles = Get-Content "$WorkingFolder\tiered-entra-roles.json" | ConvertFrom-Json 
-write-host "$($TierRoles.count) role tier definition found"
-if ($null -eq $tierRoles){Write-warning "Failed to get Entra roles tier definition"}
+$tierRolesDefinition = Get-Content "$WorkingFolder\tiered-entra-roles.json" | ConvertFrom-Json 
+write-host "$($tierRolesDefinition.count) role tier definition found"
+if ($null -eq $tierRolesDefinition ){Write-warning "Failed to get Entra roles tier definition"}
 else {write-host "--- ✅ done ---" -ForegroundColor Green}
 
 Write-Host "Processing permanent assignments... " -ForegroundColor DarkGray -NoNewline
 $AssignedRoles = @()
 $i=0;$j=$RoleAssignments.count
-foreach ($role in $RoleAssignments) {
+foreach ($PermanentAssignment in $RoleAssignments) {
     $i++;Write-Progress -Activity "In Progress..." -PercentComplete ($i/$j*100) -Status "$i/$j"
     #Exclude PIM activated roles from permanent assignemnts
     if ($null -eq ($PIMRolesActivated | where {$_.principalId -eq $role.principalId -and $_.roleDefinitionId -eq $role.roleDefinitionId})){
-        $AssignedRoles += Get-AssignmentInfo -assignment $role
+        $AssignedRoles += Get-AssignmentInfo -assignment $PermanentAssignment
     }
 }
 Write-Progress -Activity "In progress..." -Completed
@@ -147,9 +149,9 @@ write-host "$($assignedRoles.count) found"
 Write-host "Processing eligible assignments... " -ForegroundColor DarkGray -NoNewline
 $EligibleRoles = @()
 $i=0;$j=$RoleEligibility.count
-foreach ($role in $RoleEligibility) {
+foreach ($EligibleAssignment in $RoleEligibility) {
     $i++;Write-Progress -Activity "In Progress..." -PercentComplete ($i/$j*100) -Status "$i/$j"
-    $EligibleRoles += Get-AssignmentInfo -assignment $role -PIM $True
+    $EligibleRoles += Get-AssignmentInfo -assignment $EligibleAssignment -PIM $True
 }
 Write-Progress -Activity "In progress..." -Completed
 write-host "$($EligibleRoles.count) found"
@@ -157,20 +159,28 @@ write-host "--- ✅ done ---" -ForegroundColor Green
 
 Write-host "Exporting all assignments to $WorkingFolder\AdminRolesSummary.csv..." -ForegroundColor DarkGray
 $AllRoleAssignments = ($AssignedRoles + $EligibleRoles) | Sort-Object Tier,Role
-$AllRoleAssignments | select -ExcludeProperty id | export-csv $WorkingFolder\AdminRolesSummary.csv -NoTypeInformation -Delimiter ";" -Force -Encoding utf8
+$AllRoleAssignments | select-object -ExcludeProperty id | export-csv $WorkingFolder\AdminRolesSummary.csv -NoTypeInformation -Delimiter ";" -Force -Encoding utf8
 write-host "--- ✅ done ---" -ForegroundColor Green
 
 Write-host "Expanding role assignable groups... " -ForegroundColor DarkGray -NoNewline
 $AdminGroups = @()
+$AssignableGroupsMembers = @()
 $i=0;$j=$AssignableGroups.count
 foreach ($group in $AssignableGroups){
     $i++;Write-Progress -Activity "In Progress..." -PercentComplete ($i/$j*100) -Status "$i/$j"
+    #Getting Members of the group
+    $GroupMembers = @()
+    $groupMembers = Invoke-MgGraphRequestPaging -uri $($GroupMembersURI -replace "<groupid>",$group.id)
+    $groupMembers | Add-Member -NotePropertyName "ParentGroupID" -NotePropertyValue $group.id
+    $groupMembers | Add-Member -NotePropertyName "ParentGroupDisplayName" -NotePropertyValue $group.displayName
+    $AssignableGroupsMembers += $GroupMembers
+
     $current = [PSCustomObject]@{
         DisplayName         = $group.displayName
         Role                = ($AllRoleAssignments | where DisplayName -eq $group.displayName).Role -join "|"
         RoleAssignmentType  = ($AllRoleAssignments | where DisplayName -eq $group.displayName).MembershipType -join "|"
-        MembersUPN          = $group.members.userPrincipalName -join "|"
-        MembersID           = $group.members.Id
+        MembersUPN          = $GroupMembers.userPrincipalName -join "|" #$group.members.userPrincipalName -join "|"
+        MembersID           = $GroupMembers.Id -join "|"  #$group.members.Id
         #PIMforGrpEnabled    = $PIMEnabled
     }
 
@@ -185,47 +195,45 @@ $AdminGroups | select -ExcludeProperty MembersId | export-csv $WorkingFolder\Adm
 write-host "--- ✅ done ---" -ForegroundColor Green
 
 Write-host "Resolving group members and role assignments to create the complete report..." -ForegroundColor DarkGray
-$AdminRolesDetail = @()
+$AdminRolesDetails = @()
 $i=0;$j=$AllRoleAssignments.count
-foreach ($role in $AllRoleAssignments){
+foreach ($roleAsssignment in $AllRoleAssignments){
     $i++;Write-Progress -Activity "In Progress..." -PercentComplete ($i/$j*100) -Status "$i/$j"
-    if ($role.principalType -eq "group") {
-        $members = ($AdminGroups | where DisplayName -eq $role.DisplayName).MembersID
+    if ($roleAsssignment.principalType -eq "group") {
+        $members = $AssignableGroupsMembers | where ParentGroupID -eq $roleAsssignment.id
         foreach ($member in $members) {
-            $mgmember = $AssignableGroups.members | where Id -eq $member | select -Unique
             $UserMFAMethods = ""
             $UserMFAphishresistant = ""
-            if ($mgmember.'@odata.type' -like "*user*") {
-                $userid = $mgmember.id
-                $UserMFAUri = "https://graph.microsoft.com/beta/users/$userid/authentication/methods"
-                $UserMFA = Invoke-MgGraphRequestPaging -uri $UserMFAUri
+            if ($member.'@odata.type' -like "*user*") {
+                $CurrentUserMFAURI = $UserMFAUri -replace "<userid>",$member.id
+                $UserMFA = Invoke-MgGraphRequestPaging -uri $CurrentUserMFAURI
                 $UserMFAMethods = $UserMFA.'@odata.type' -replace "#microsoft.graph.","" -replace "AuthenticationMethod","" -join "|"
                 $UserMFAphishresistant = if ($UserMFAMethods -like "*fido2*" -or $UserMFAMethods -like "*windowsHelloForBusiness*"){"Yes"} else {"No"}
             }
             $current = [PSCustomObject]@{
-                Role                = $role.role
-                Tier                = $role.tier
-                PrincipalType       = $mgmember.'@odata.type' -replace "#microsoft.graph.",""
-                MembershipType      = $Role.MembershipType
-                DisplayName         = $mgmember.DisplayName
-                UserPrincipalName   = $mgmember.UserPrincipalName
-                Enabled             = $mgmember.accountEnabled
-                MFAphishresistantAvailable  = $UserMFAphishresistant
-                MFAMethods                  = $UserMFAMethods
-                AssignedThrough      = $role.DisplayName
-                PIMDuration          = $role.PIMDuration
-                PIMValidation        = $role.PIMValidation
-                PIMApproval          = $role.PIMApproval
-                PIMAuthContext       = $Role.PIMAuthContext
-                id                   = $role.id
+                Role                         = $roleAsssignment.role
+                Tier                         = $roleAsssignment.tier
+                PrincipalType                = $member.'@odata.type' -replace "#microsoft.graph.",""
+                MembershipType               = $roleAsssignment.MembershipType
+                DisplayName                  = $member.DisplayName
+                UserPrincipalName            = $member.UserPrincipalName
+                Enabled                      = $member.accountEnabled
+                MFAphishresistantAvailable   = $UserMFAphishresistant
+                MFAMethods                   = $UserMFAMethods
+                AssignedThrough              = $roleAsssignment.DisplayName
+                PIMDuration                  = $roleAsssignment.PIMDuration
+                PIMValidation                = $roleAsssignment.PIMValidation
+                PIMApproval                  = $roleAsssignment.PIMApproval
+                PIMAuthContext               = $roleAsssignment.PIMAuthContext
+                id                           = $roleAsssignment.id
             }
-            $AdminRolesDetail += $current
+            $AdminRolesDetails += $current
         }
     } 
     else {
-        $current = $role     
+        $current = $roleAsssignment     
         $current | add-member -NotePropertyName AssignedThrough -NotePropertyValue "Direct" -force
-        $AdminRolesDetail += $current
+        $AdminRolesDetails += $current
     }
 
 }
@@ -233,21 +241,21 @@ Write-Progress -Activity "In progress..." -Completed
 write-host "--- ✅ done ---" -ForegroundColor Green
 
 Write-host "Exporting all role assignable groups to $WorkingFolder\AdminRolesDetails.csv..." -ForegroundColor DarkGray
-$AdminRolesDetail | select Role,Tier,MembershipType,AssignedThrough,PrincipalType,DisplayName,UserPrincipalName,Enabled,PIMDuration,PIMValidation,PIMApproval,PIMAuthContext,MFAphishresistantAvailable,MFAMethods -ExcludeProperty id,NumberOfGroupMembers | sort-object Tier,Role | export-csv $WorkingFolder\AdminRolesDetails.csv -NoTypeInformation -Delimiter ";" -Force -Encoding utf8
+$AdminRolesDetails | select Role,Tier,MembershipType,AssignedThrough,PrincipalType,DisplayName,UserPrincipalName,Enabled,PIMDuration,PIMValidation,PIMApproval,PIMAuthContext,MFAphishresistantAvailable,MFAMethods -ExcludeProperty id,NumberOfGroupMembers | sort-object Tier,Role | export-csv $WorkingFolder\AdminRolesDetails.csv -NoTypeInformation -Delimiter ";" -Force -Encoding utf8
 write-host "--- ✅ done ---" -ForegroundColor Green
 
 #Analysis
 Write-host "Export completed : $WorkingFolder" -ForegroundColor Cyan
 Write-host "----------------------------------------"
 $NumberOfRoles = ($AllRoleAssignments | where role -ne $null | select role -Unique).count
-$NumberOfAssignments = $AdminRolesDetail.count
+$NumberOfAssignments = $AdminRolesDetails.count
 Write-Host "Found $NumberOfRoles admin roles with $NumberOfAssignments assignments" -ForegroundColor Cyan
 Write-host "-------"
 #Tier0
-$Tier0Admins              = $AdminRolesDetail | where Tier -eq "0"
+$Tier0Admins              = $AdminRolesDetails | where Tier -eq "0"
 $Tier0AdminsCount         = $Tier0Admins.count
 $Tier0UniqueAdminsCount   = ($Tier0Admins | select id -unique).count
-$Tier0GAAdmins            = ($AdminRolesDetail | where Role -eq "Global Administrator").count
+$Tier0GAAdmins            = ($AdminRolesDetails | where Role -eq "Global Administrator").count
 $Tier0NoPIM               = ($Tier0Admins | where MembershipType -ne "ELIGIBLE").count
 $Tier0NoPRMFA             = ($Tier0Admins | where MFAphishresistantAvailable -ne "YES").count
 if ($Tier0AdminsCount -ge 20) {$WarningT0 = "⚠️"} else {$WarningT0 = ""}
@@ -262,7 +270,7 @@ Write-host "`t- $Tier0NoPRMFA without MFA phish resistant available $warningMFA"
 Write-host "-------"
 
 #Tier1
-$Tier1Admins              = $AdminRolesDetail | where Tier -eq "1"
+$Tier1Admins              = $AdminRolesDetails | where Tier -eq "1"
 $Tier1AdminsCount         = $Tier1Admins.count
 $Tier1UniqueAdminsCount   = ($Tier1Admins | select id -unique).count
 $Tier1NoPIM               = ($Tier1Admins | where MembershipType -ne "ELIGIBLE").count
@@ -276,8 +284,8 @@ Write-host "`t- $Tier1NoPRMFA without MFA phish resistant available $warningMFA"
 Write-host "-------"
 
 #Tier2 or untiered
-$Tier2Admins            = $AdminRolesDetail | where Tier -eq "2"
-$Tier2Admins           += $AdminRolesDetail | where Tier -eq $null
+$Tier2Admins            = $AdminRolesDetails | where Tier -eq "2"
+$Tier2Admins           += $AdminRolesDetails | where Tier -eq $null
 $Tier2AdminsCount       = $Tier2Admins.count
 $Tier2UniqueAdminsCount = ($Tier2Admins | select id -unique).count
 $Tier2NoPIM             = ($Tier2Admins | where MembershipType -ne "ELIGIBLE").count
