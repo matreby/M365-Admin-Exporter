@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rapport des rôles d'administration — Tenant M365</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   MODÈLE utilisé par generate_report.py — ne pas ouvrir ce
+   fichier directement, les données sont injectées au build.
+   Aucune dépendance externe (JS) : le rapport généré est 100%
+   autonome et fonctionne hors-ligne, y compris les graphiques
+   (rendus en SVG pur, sans librairie).
+   ============================================================ */
+
+:root{
+  --bg:#F5F6F9;
+  --surface:#FFFFFF;
+  --border:#E4E7EC;
+  --text:#101828;
+  --text-soft:#5D6472;
+  --text-faint:#98A2B3;
+  --accent:#3538CD;
+  --accent-soft:#EEF0FF;
+  --accent2:#0891B2;
+  --accent2-soft:#E6F8FB;
+  --success:#0D9C5D;
+  --success-soft:#E7F8F0;
+  --warning:#B54708;
+  --warning-soft:#FFF4E5;
+  --danger:#D92D20;
+  --danger-soft:#FEF0EE;
+  --tier0:#D92D20;
+  --tier1:#B54708;
+  --tier2:#3538CD;
+  --radius:10px;
+  --shadow: 0 1px 2px rgba(16,24,40,0.04), 0 1px 3px rgba(16,24,40,0.04);
+}
+
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:'Inter',-apple-system,sans-serif;
+  font-size:14px;
+  line-height:1.45;
+}
+.mono{font-family:'IBM Plex Mono',monospace;}
+
+/* ---------- header ---------- */
+.topbar{
+  height:4px;
+  background:linear-gradient(90deg,var(--accent) 0%, var(--accent2) 55%, var(--tier1) 100%);
+}
+header.hero{
+  background:var(--surface);
+  border-bottom:1px solid var(--border);
+  padding:28px 40px 24px;
+}
+.hero-inner{
+  max-width:1280px;
+  margin:0 auto;
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-end;
+  flex-wrap:wrap;
+  gap:16px;
+}
+.hero-title-block .eyebrow{
+  font-family:'IBM Plex Mono',monospace;
+  font-size:11px;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--accent);
+  font-weight:600;
+  margin-bottom:6px;
+}
+.hero-title-block h1{
+  font-size:24px;
+  font-weight:800;
+  margin:0 0 4px;
+  letter-spacing:-0.01em;
+}
+.hero-title-block .sub{
+  color:var(--text-soft);
+  font-size:13px;
+}
+.hero-meta{
+  display:flex;
+  gap:24px;
+  font-family:'IBM Plex Mono',monospace;
+  font-size:12px;
+  color:var(--text-soft);
+}
+.hero-meta div span{display:block;color:var(--text-faint);font-size:10px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:2px;}
+.hero-meta div b{color:var(--text);font-weight:600;}
+
+main{
+  max-width:1280px;
+  margin:0 auto;
+  padding:32px 40px 60px;
+}
+
+/* ---------- KPI cards ---------- */
+.kpi-grid{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:16px;
+  margin-bottom:28px;
+}
+.kpi-card{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:20px 20px 18px;
+  box-shadow:var(--shadow);
+  position:relative;
+  overflow:hidden;
+}
+.kpi-card::before{
+  content:"";
+  position:absolute;
+  left:0;top:0;bottom:0;
+  width:3px;
+  background:var(--bar);
+}
+.kpi-card .kpi-label{
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:.07em;
+  color:var(--text-soft);
+  font-weight:600;
+  margin-bottom:10px;
+}
+.kpi-card .kpi-value{
+  font-family:'IBM Plex Mono',monospace;
+  font-size:32px;
+  font-weight:600;
+  letter-spacing:-0.02em;
+  color:var(--text);
+}
+.kpi-card .kpi-value small{
+  font-size:14px;
+  font-weight:500;
+  color:var(--text-faint);
+  margin-left:4px;
+}
+.kpi-card .kpi-foot{
+  margin-top:8px;
+  font-size:12px;
+  color:var(--text-soft);
+}
+.kpi-card .kpi-foot b{color:inherit;}
+#kpi-total{--bar:var(--accent);}
+#kpi-mfa{--bar:var(--success);}
+#kpi-pim{--bar:var(--accent2);}
+#kpi-permanent{--bar:var(--warning);}
+
+/* ---------- charts row ---------- */
+.charts-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:16px;
+  margin-bottom:28px;
+}
+.panel{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+  padding:20px 22px 22px;
+}
+.panel-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:baseline;
+  margin-bottom:4px;
+}
+.panel-head h3{
+  font-size:14px;
+  font-weight:700;
+  margin:0;
+}
+.panel-head .panel-note{
+  font-size:11px;
+  color:var(--text-faint);
+  font-family:'IBM Plex Mono',monospace;
+}
+.chart-wrap{
+  display:flex;
+  align-items:center;
+  gap:24px;
+  height:190px;
+}
+.donut{flex:0 0 auto;line-height:0;}
+.donut svg{display:block;}
+.donut-total{
+  font-family:'IBM Plex Mono',monospace;
+  font-size:26px;
+  font-weight:600;
+  fill:var(--text);
+}
+.donut-label{
+  font-family:'IBM Plex Mono',monospace;
+  font-size:10px;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  fill:var(--text-faint);
+}
+.legend-list{
+  list-style:none;
+  margin:0;padding:0;
+  font-size:12.5px;
+  flex:1;
+}
+.legend-list li{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  padding:6px 0;
+  border-bottom:1px dashed var(--border);
+}
+.legend-list li:last-child{border-bottom:none;}
+.legend-dot{
+  width:9px;height:9px;border-radius:50%;
+  display:inline-block;margin-right:8px;flex:0 0 auto;
+}
+.legend-name{display:flex;align-items:center;color:var(--text-soft);}
+.legend-val{font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--text);}
+
+/* ---------- table ---------- */
+.table-panel{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+  overflow:hidden;
+}
+.table-toolbar{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  padding:18px 22px;
+  border-bottom:1px solid var(--border);
+  gap:16px;
+  flex-wrap:wrap;
+}
+.table-toolbar h3{margin:0;font-size:14px;font-weight:700;}
+.table-toolbar .count{
+  font-family:'IBM Plex Mono',monospace;
+  font-size:11px;
+  color:var(--text-faint);
+  margin-left:8px;
+}
+.search-box{
+  display:flex;
+  align-items:center;
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:7px 12px;
+  background:var(--bg);
+  min-width:260px;
+}
+.search-box svg{flex:0 0 auto;margin-right:8px;opacity:.5;}
+.search-box input{
+  border:none;background:transparent;outline:none;
+  font-family:inherit;font-size:13px;width:100%;color:var(--text);
+}
+.table-scroll{overflow-x:auto;}
+table{
+  border-collapse:collapse;
+  width:100%;
+  font-size:12.5px;
+  min-width:1400px;
+}
+thead th{
+  text-align:left;
+  padding:10px 14px;
+  background:var(--bg);
+  border-bottom:1px solid var(--border);
+  font-weight:600;
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+  color:var(--text-soft);
+  white-space:nowrap;
+  cursor:pointer;
+  user-select:none;
+  position:sticky;top:0;
+}
+thead th:hover{color:var(--accent);}
+thead th .arrow{opacity:.35;margin-left:3px;font-size:10px;}
+tbody td{
+  padding:10px 14px;
+  border-bottom:1px solid var(--border);
+  white-space:nowrap;
+  color:var(--text);
+}
+tbody tr:hover{background:var(--accent-soft);}
+tbody tr:last-child td{border-bottom:none;}
+.name-cell{font-weight:600;}
+.upn-cell{color:var(--text-soft);font-family:'IBM Plex Mono',monospace;font-size:11.5px;}
+
+.badge{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  padding:3px 9px;
+  border-radius:100px;
+  font-size:11px;
+  font-weight:600;
+  white-space:nowrap;
+}
+.badge-tier0{background:#FEF0EE;color:var(--tier0);}
+.badge-tier1{background:#FFF4E5;color:var(--tier1);}
+.badge-tier2{background:#EEF0FF;color:var(--tier2);}
+.badge-yes{background:var(--success-soft);color:var(--success);}
+.badge-no{background:var(--danger-soft);color:var(--danger);}
+.badge-neutral{background:var(--bg);color:var(--text-faint);}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;}
+.dot-on{background:var(--success);}
+.dot-off{background:var(--danger);}
+
+footer{
+  max-width:1280px;
+  margin:0 auto;
+  padding:0 40px 40px;
+  color:var(--text-faint);
+  font-size:11.5px;
+  font-family:'IBM Plex Mono',monospace;
+}
+
+@media (max-width:1000px){
+  .kpi-grid{grid-template-columns:1fr 1fr;}
+  .charts-grid{grid-template-columns:1fr;}
+  main{padding:24px 16px 40px;}
+  header.hero{padding:20px 16px;}
+}
+</style>
+</head>
+<body>
+
+<div class="topbar"></div>
+<header class="hero">
+  <div class="hero-inner">
+    <div class="hero-title-block">
+      <div class="eyebrow">Rapport d'audit — Rôles Microsoft Entra ID</div>
+      <h1>Cartographie des administrateurs du tenant</h1>
+      <div class="sub">Vue consolidée des affectations de rôles privilégiés, méthodes d'attribution et couverture MFA</div>
+    </div>
+    <div class="hero-meta">
+      <div><span>Source Tenant</span><b id="meta-tenant">__META_SOURCE__</b></div>
+      <div><span>Généré le</span><b id="meta-date">__META_DATE__</b></div>
+      <div><span>Comptes uniques</span><b id="meta-unique"></b></div>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <section class="kpi-grid">
+    <div class="kpi-card" id="kpi-total">
+      <div class="kpi-label">Affectations totales</div>
+      <div class="kpi-value mono" id="v-total">0</div>
+      <div class="kpi-foot">Toutes affectations de rôles, tous types confondus</div>
+    </div>
+    <div class="kpi-card" id="kpi-mfa">
+      <div class="kpi-label">MFA phishing-resistant dispo.</div>
+      <div class="kpi-value mono" id="v-mfa">0 <small id="v-mfa-pct"></small></div>
+      <div class="kpi-foot">Administrateurs équipés (FIDO2 / Windows Hello / CBA)</div>
+    </div>
+    <div class="kpi-card" id="kpi-pim">
+      <div class="kpi-label">Affectations via PIM</div>
+      <div class="kpi-value mono" id="v-pim">0 <small id="v-pim-pct"></small></div>
+      <div class="kpi-foot">Éligibles ou actives via Privileged Identity Management</div>
+    </div>
+    <div class="kpi-card" id="kpi-permanent">
+      <div class="kpi-label">Affectations permanentes</div>
+      <div class="kpi-value mono" id="v-permanent">0 <small id="v-permanent-pct"></small></div>
+      <div class="kpi-foot">Attributions directes sans expiration</div>
+    </div>
+  </section>
+
+  <section class="charts-grid">
+    <div class="panel">
+      <div class="panel-head">
+        <h3>Type d'attribution</h3>
+        <span class="panel-note">Direct vs PIM</span>
+      </div>
+      <div class="chart-wrap">
+        <div class="donut" id="chart-assignment"></div>
+        <ul class="legend-list" id="legend-assignment"></ul>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <h3>Répartition par Tier</h3>
+        <span class="panel-note">Tier 0 / 1 / 2</span>
+      </div>
+      <div class="chart-wrap">
+        <div class="donut" id="chart-tier"></div>
+        <ul class="legend-list" id="legend-tier"></ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="table-panel">
+    <div class="table-toolbar">
+      <h3>Détail des affectations <span class="count" id="table-count"></span></h3>
+      <div class="search-box">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="search" placeholder="Rechercher un nom, un rôle, un UPN...">
+      </div>
+    </div>
+    <div class="table-scroll">
+      <table id="admin-table">
+        <thead>
+          <tr>
+            <th data-key="Role">Role<span class="arrow"></span></th>
+            <th data-key="Tier">Tier<span class="arrow"></span></th>
+            <th data-key="MembershipType">MembershipType<span class="arrow"></span></th>
+            <th data-key="AssignedThrough">AssignedThrough<span class="arrow"></span></th>
+            <th data-key="PrincipalType">PrincipalType<span class="arrow"></span></th>
+            <th data-key="DisplayName">DisplayName<span class="arrow"></span></th>
+            <th data-key="UserPrincipalName">UserPrincipalName<span class="arrow"></span></th>
+            <th data-key="Enabled">Enabled<span class="arrow"></span></th>
+            <th data-key="PIMDuration">PIMDuration<span class="arrow"></span></th>
+            <th data-key="PIMValidation">PIMValidation<span class="arrow"></span></th>
+            <th data-key="PIMApproval">PIMApproval<span class="arrow"></span></th>
+            <th data-key="PIMAuthContext">PIMAuthContext<span class="arrow"></span></th>
+            <th data-key="MFAphishresistantAvailable">MFAPhishResistant<span class="arrow"></span></th>
+            <th data-key="MFAMethods">MFAMethods<span class="arrow"></span></th>
+          </tr>
+        </thead>
+        <tbody id="table-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  Rapport statique généré à partir d'un export du script d'audit des rôles Microsoft Entra ID. Aucune donnée n'est envoyée à un service tiers — ce fichier fonctionne hors-ligne.
+</footer>
+
+<script>
+/* ============================================================
+   Données injectées au moment de la génération par
+   generate_report.py — ce tableau est figé, le rapport est
+   statique (rouvrir ce fichier n'interroge jamais le tenant).
+   ============================================================ */
+const ADMIN_DATA = __ADMIN_DATA_JSON__;
+
+/* ---------------- helpers ---------------- */
+const tbody = document.getElementById('table-body');
+const tierBadge = t => `<span class="badge ${t==='0'?'badge-tier0':t==='1'?'badge-tier1':'badge-tier2'}">${t||'—'}</span>`;
+const yesNoBadge = v => !v ? `<span class="badge badge-neutral">—</span>` : `<span class="badge ${v==='Yes'?'badge-yes':'badge-no'}">${v}</span>`;
+const enabledDot = e => `<span class="dot ${e?'dot-on':'dot-off'}"></span> ${e?'Activé':'Désactivé'}`;
+
+/* ---------------- KPIs ---------------- */
+function renderKPIs(data){
+  const total = data.length;
+  const mfaCount = data.filter(d=>d.MFAphishresistantAvailable==="Yes").length;
+  const pimCount = data.filter(d=>d.MembershipType==="ELIGIBLE").length;
+  const permanentCount = data.filter(d=>d.MembershipType==="PERMANENT").length;
+  const pct = (n)=> total? Math.round(n/total*100)+"%":"0%";
+
+  document.getElementById('v-total').textContent = total;
+  document.getElementById('v-mfa').innerHTML = mfaCount + ' <small>('+pct(mfaCount)+')</small>';
+  document.getElementById('v-pim').innerHTML = pimCount + ' <small>('+pct(pimCount)+')</small>';
+  document.getElementById('v-permanent').innerHTML = permanentCount + ' <small>('+pct(permanentCount)+')</small>';
+  document.getElementById('meta-unique').textContent = new Set(data.map(d=>d.UserPrincipalName)).size;
+}
+
+/* ---------------- graphiques (SVG pur, sans librairie) ---------------- */
+function donutSVG(dataMap, colorMap, size, thickness){
+  size = size || 150; thickness = thickness || 20;
+  const entries = Object.entries(dataMap).filter(([,v])=>v>0);
+  const total = entries.reduce((s,[,v])=>s+v,0);
+  const r = (size - thickness) / 2;
+  const c = 2 * Math.PI * r;
+  const cx = size/2, cy = size/2;
+  let circles = '';
+  if(total === 0){
+    circles = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--border)" stroke-width="${thickness}"/>`;
+  } else {
+    let acc = 0;
+    entries.forEach(([label, val])=>{
+      const frac = val / total;
+      const dash = frac * c;
+      const gap = c - dash;
+      const color = colorMap[label] || '#98A2B3';
+      circles += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="${thickness}" stroke-dasharray="${dash} ${gap}" stroke-dashoffset="${-acc}" transform="rotate(-90 ${cx} ${cy})"/>`;
+      acc += dash;
+    });
+  }
+  return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">
+    ${circles}
+    <text x="${cx}" y="${cy - 3}" text-anchor="middle" class="donut-total">${total}</text>
+    <text x="${cx}" y="${cy + 15}" text-anchor="middle" class="donut-label">total</text>
+  </svg>`;
+}
+
+function renderDonut(containerId, legendId, dataMap, colorMap){
+  document.getElementById(containerId).innerHTML = donutSVG(dataMap, colorMap);
+  const labels = Object.keys(dataMap).filter(l=>dataMap[l] > 0);
+  const ul = document.getElementById(legendId);
+  ul.innerHTML = labels.length
+    ? labels.map(l=>`<li><span class="legend-name"><span class="legend-dot" style="background:${colorMap[l]||'#98A2B3'}"></span>${l}</span><span class="legend-val">${dataMap[l]}</span></li>`).join('')
+    : `<li>Aucune donnée</li>`;
+}
+
+function renderCharts(data){
+  renderDonut('chart-assignment', 'legend-assignment', {
+    "Attribution directe": data.filter(d=>d.MembershipType==="PERMANENT").length,
+    "Via PIM": data.filter(d=>d.MembershipType==="ELIGIBLE").length
+  }, {
+    "Attribution directe":"#B54708",
+    "Via PIM":"#0891B2"
+  });
+
+  const tierMap = {};
+  ["0","1","2"].forEach(t=>{ tierMap[`Tier ${t}`] = data.filter(d=>d.Tier===t).length; });
+  renderDonut('chart-tier', 'legend-tier', tierMap, {
+    "Tier 0":"#D92D20",
+    "Tier 1":"#B54708",
+    "Tier 2":"#3538CD"
+  });
+}
+
+/* ---------------- tableau ---------------- */
+function renderTable(rows){
+  document.getElementById('table-count').textContent = `(${rows.length})`;
+  tbody.innerHTML = rows.length ? rows.map(d=>`
+    <tr>
+      <td>${d.Role||'—'}</td>
+      <td>${tierBadge(d.Tier)}</td>
+      <td>${d.MembershipType||'—'}</td>
+      <td>${d.AssignedThrough||'—'}</td>
+      <td>${d.PrincipalType||'—'}</td>
+      <td class="name-cell">${d.DisplayName||'—'}</td>
+      <td class="upn-cell">${d.UserPrincipalName||'—'}</td>
+      <td>${enabledDot(d.Enabled)}</td>
+      <td>${d.PIMDuration || '—'}</td>
+      <td>${d.PIMValidation || '—'}</td>
+      <td>${d.PIMApproval || '—'}</td>
+      <td>${d.PIMAuthContext || '—'}</td>
+      <td>${yesNoBadge(d.MFAphishresistantAvailable)}</td>
+      <td>${d.MFAMethods || '—'}</td>
+    </tr>
+  `).join('') : `<tr><td colspan="14" style="text-align:center;color:var(--text-faint);padding:24px;">Aucune ligne ne correspond</td></tr>`;
+}
+
+let sortKey = null, sortDir = 1;
+
+function currentRows(){
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  if(!q) return ADMIN_DATA;
+  return ADMIN_DATA.filter(d=>
+    [d.Role,d.Tier,d.DisplayName,d.UserPrincipalName,d.PrincipalType,d.MembershipType].join(' ').toLowerCase().includes(q)
+  );
+}
+
+document.querySelectorAll('thead th').forEach(th=>{
+  th.addEventListener('click', ()=>{
+    const key = th.dataset.key;
+    sortDir = (sortKey === key) ? -sortDir : 1;
+    sortKey = key;
+    document.querySelectorAll('thead .arrow').forEach(a=>a.textContent='');
+    th.querySelector('.arrow').textContent = sortDir===1 ? '▲' : '▼';
+    const sorted = [...currentRows()].sort((a,b)=>{
+      let va = a[key], vb = b[key];
+      if(typeof va === 'boolean') { va = va?1:0; vb = vb?1:0; }
+      else { va = (va||'').toString().toLowerCase(); vb = (vb||'').toString().toLowerCase(); }
+      return va > vb ? sortDir : va < vb ? -sortDir : 0;
+    });
+    renderTable(sorted);
+  });
+});
+
+document.getElementById('search').addEventListener('input', ()=>{
+  renderTable(currentRows());
+});
+
+/* ---------------- init ---------------- */
+renderKPIs(ADMIN_DATA);
+renderCharts(ADMIN_DATA);
+renderTable(ADMIN_DATA);
+</script>
+</body>
+</html>

@@ -88,7 +88,7 @@ $ProgressPreference = "Continue" #Replace by SilentlyContinue to mask progress b
 
 if ($null -eq (Get-MgContext)) {
     Write-host "Connecting to MgGraph..."
-    Connect-MgGraph -Scopes "Directory.Read.All","RoleManagement.Read.All","UserAuthenticationMethod.Read.All" #"RoleManagementPolicy.Read.AzureADGroup"
+    Connect-MgGraph -Scopes "Directory.Read.All","RoleManagement.Read.All","UserAuthenticationMethod.Read.All" #"RoleManagementPolicy.Read.AzureADGroup","Policy.Read.All"
 } 
 else {
     Write-host "Already connected to MgGraph using $((Get-MgContext).AppName)"
@@ -121,6 +121,8 @@ Write-host "- Exporting PIM configuration for all roles..." -ForegroundColor Dar
 $PIMRolePolicies    = Invoke-MgGraphRequestPaging -Uri $PIMRolePoliciesURI
 Write-host "- Exporting currently activated PIM roles..." -ForegroundColor DarkGray
 $PIMRolesActivated  = Invoke-MgGraphRequestPaging -Uri $PIMRolesActivatedURI
+#Write-host "- Exporting conditional access policies..." -ForegroundColor DarkGray
+#$ConditionalAccessPolicies = Invoke-MgGraphRequestPaging -Uri "https://graph.microsoft.com/beta/identity/conditionalAccess/policies"
 Write-host "--- ✅ Graph exports done ---" -ForegroundColor Green
 
 Write-host "- Importing roles tier definition (aztier.com)... " -ForegroundColor DarkGray
@@ -245,6 +247,7 @@ Write-host "Exporting all role assignable groups to $WorkingFolder\AdminRolesDet
 $AdminRolesDetails | Select-Object Role,Tier,MembershipType,AssignedThrough,PrincipalType,DisplayName,UserPrincipalName,Enabled,PIMDuration,PIMValidation,PIMApproval,PIMAuthContext,MFAphishresistantAvailable,MFAMethods -ExcludeProperty id,NumberOfGroupMembers | sort-object Tier,Role | export-csv $WorkingFolder\AdminRolesDetails.csv -NoTypeInformation -Delimiter ";" -Force -Encoding utf8
 write-host "--- ✅ done ---" -ForegroundColor Green
 
+
 #Analysis
 Write-host "Export completed : $WorkingFolder" -ForegroundColor Cyan
 Write-host "----------------------------------------"
@@ -298,3 +301,21 @@ Write-host "$Tier2AdminsCount assignments ($Tier2UniqueAdminsCount admins)"
 Write-host "`t- $Tier2NoPIM without PIM (permanent admin) $warningPIM" 
 Write-host "`t- $Tier2NoPRMFA without MFA phish resistant available $warningMFA" 
 Write-host "-------"
+
+
+#Exporting HTML report
+$templatePath = "$workingfolder/report_template.html" 
+$outputPath = "$workingfolder/AdminReport.html" 
+$json = ConvertTo-Json -InputObject $AdminRolesDetails -Depth 6 -Compress
+$template = Get-Content -LiteralPath $TemplatePath -Raw -Encoding UTF8
+$generatedAt = Get-Date -Format "dd/MM/yyyy HH:mm"
+$sourceLabel = (Get-MGcontext).TenantId
+
+$html = $template.Replace("__ADMIN_DATA_JSON__", $json)
+$html = $html.Replace("__META_SOURCE__", $sourceLabel)
+$html = $html.Replace("__META_DATE__", $generatedAt)
+ 
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText($OutputPath, $html, $utf8NoBom)
+write-host "Exported HTML report : $OutputPath" -ForegroundColor Cyan
+ 
